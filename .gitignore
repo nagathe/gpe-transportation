@@ -1,0 +1,19 @@
+# Env
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# dbt
+dbt/target/
+dbt/logs/
+dbt/.user.yml
+
+# Data
+data/
+
+# OS
+.DS_Store

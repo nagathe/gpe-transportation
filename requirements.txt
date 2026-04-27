@@ -1,0 +1,34 @@
+# === Base de données ===
+psycopg2-binary==2.9.9        # driver PostgreSQL pour Python
+sqlalchemy==1.4.52            # ORM et connexion base de données
+geoalchemy2==0.15.1           # extension PostGIS pour SQLAlchemy
+
+# === Ingestion & manipulation données ===
+requests==2.31.0              # téléchargement fichiers / appels API
+pandas==2.2.0                 # manipulation de données tabulaires
+geopandas==0.14.3             # manipulation de données géographiques
+pyproj==3.6.1                 # projections cartographiques
+
+# === Orchestration ===
+apache-airflow==2.9.3         # orchestration des pipelines de données
+
+# === Transformation ===
+dbt-postgres==1.7.0           # transformations SQL versionnées
+
+# === Machine Learning ===
+scikit-learn==1.4.2           # clustering k-means + régression
+numpy==1.26.4                 # calcul numérique
+
+# === Visualisation / App ===
+streamlit==1.32.0             # application web interactive
+
+# === Qualité du code ===
+black==24.3.0                 # formatage automatique du code
+flake8==7.0.0                 # linting (détection d'erreurs de style)
+isort==5.13.2                 # tri automatique des imports
+mypy==1.9.0                   # vérification du typage statique
+pre-commit==3.7.0             # hooks git automatiques avant chaque commit
+
+# === Tests ===
+pytest==8.1.1                 # framework de tests
+pytest-cov==5.0.0             # mesure de la couverture de tests
