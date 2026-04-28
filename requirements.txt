@@ -8,9 +8,10 @@ requests==2.31.0              # téléchargement fichiers / appels API
 pandas==2.2.0                 # manipulation de données tabulaires
 geopandas==0.14.3             # manipulation de données géographiques
 pyproj==3.6.1                 # projections cartographiques
+shapely==2.0.3                # manipulation de géométries (dépendance geopandas)
 
-# === Orchestration ===
-apache-airflow==2.9.3         # orchestration des pipelines de données
+# === Orchestration === on verra après si on orchestre en mode + complexe  
+#apache-airflow==2.9.3         # orchestration des pipelines de données
 
 # === Transformation ===
 dbt-postgres==1.7.0           # transformations SQL versionnées

@@ -1,0 +1,24 @@
+# .pre-commit-config.yaml
+# Vérifications automatiques avant chaque git commit
+# Setup : pre-commit install
+# Test : pre-commit run --all-files
+
+repos:
+  # Formate le code automatiquement (espaces, indentation, longueur des lignes)
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+
+  # Détecte les erreurs de style (imports inutilisés, variables non utilisées...)
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+
+  # Trie les imports automatiquement (stdlib → libs externes → modules locaux)
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]  # Evite les conflits avec black

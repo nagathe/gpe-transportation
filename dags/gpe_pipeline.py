@@ -10,9 +10,10 @@ Schedule : quotidien (@daily)
 Auteur : grand-paris-pipeline
 """
 
+from datetime import datetime
+
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from datetime import datetime
 
 
 def fetch_gpe():
@@ -33,16 +34,16 @@ def fetch_gpe():
 with DAG(
     dag_id="gpe_pipeline",
     start_date=datetime(2024, 1, 1),  # date de départ du pipeline
-    schedule_interval="@daily",        # exécution quotidienne
-    catchup=False,                     # pas de rattrapage des runs passés
-    tags=["gpe"],                      # tag pour filtrer dans l'UI Airflow
-    doc_md=__doc__,                    # documentation visible dans l'UI Airflow
+    schedule_interval="@daily",  # exécution quotidienne
+    catchup=False,  # pas de rattrapage des runs passés
+    tags=["gpe"],  # tag pour filtrer dans l'UI Airflow
+    doc_md=__doc__,  # documentation visible dans l'UI Airflow
 ) as dag:
 
     # ------------------------------------------------------------------
     # Tâche 1 : ingestion des données brutes GPE
     # ------------------------------------------------------------------
     fetch = PythonOperator(
-        task_id="fetch_gpe",           # nom affiché dans l'UI Airflow
-        python_callable=fetch_gpe,     # fonction Python à exécuter
+        task_id="fetch_gpe",  # nom affiché dans l'UI Airflow
+        python_callable=fetch_gpe,  # fonction Python à exécuter
     )
