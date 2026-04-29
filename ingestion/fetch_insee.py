@@ -107,3 +107,34 @@ def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
     logger.info("Chargement de %d lignes dans raw.%s", len(df), table)
     df.to_sql(table, engine, schema="raw", if_exists="replace", index=False)
     logger.info("Chargement terminé pour raw.%s", table)
+
+
+def main(database_url: str) -> None:
+    """Point d'entrée principal du script d'ingestion INSEE.
+
+    Args:
+        database_url: URL de connexion Postgres (format SQLAlchemy).
+    """
+    logger.info("=== Début ingestion INSEE ===")
+
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(database_url)
+
+    # Créer le schéma raw s'il n'existe pas
+    with engine.connect() as conn:
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS raw"))
+        conn.commit()
+
+    raw_bytes = download_insee()
+    df = parse_insee(raw_bytes)
+    load_to_postgres(df, "insee_communes", engine)
+
+    logger.info("=== Ingestion INSEE terminée ===")
+
+
+if __name__ == "__main__":
+    import os
+
+    db_url = os.environ["DATABASE_URL"]
+    main(db_url)

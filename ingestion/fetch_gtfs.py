@@ -4,11 +4,13 @@ Télécharge, extrait et charge les stops et stop_times en base PostgreSQL.
 """
 
 import logging
+import os
 import zipfile
 from io import BytesIO
 
 import pandas as pd
 import requests
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
@@ -95,3 +97,46 @@ def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
     logger.info("Chargement de %d lignes dans raw.%s", len(df), table)
     df.to_sql(table, engine, schema="raw", if_exists="replace", index=False)
     logger.info("Chargement terminé pour raw.%s", table)
+
+
+def main(database_url: str) -> None:
+    """Point d'entrée principal du script d'ingestion GTFS.
+
+    Args:
+        database_url: URL de connexion Postgres (format SQLAlchemy).
+    """
+    logger.info("=== Début ingestion GTFS ===")
+
+    engine = create_engine(database_url)
+
+    # Créer le schéma raw s'il n'existe pas
+    with engine.connect() as conn:
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS raw"))
+        conn.commit()
+
+    # Télécharger et traiter GTFS
+    zip_bytes = download_gtfs()
+    dfs = extract_gtfs(zip_bytes)
+
+    # Charger stops
+    stops = parse_stops(dfs["stops"])
+    load_to_postgres(stops, "gtfs_stops", engine)
+
+    # Charger stop_times
+    if "stop_times" in dfs:
+        load_to_postgres(dfs["stop_times"], "gtfs_stop_times", engine)
+
+    # Charger trips
+    if "trips" in dfs:
+        load_to_postgres(dfs["trips"], "gtfs_trips", engine)
+
+    # Charger routes
+    if "routes" in dfs:
+        load_to_postgres(dfs["routes"], "gtfs_routes", engine)
+
+    logger.info("=== Ingestion GTFS terminée ===")
+
+
+if __name__ == "__main__":
+    db_url = os.environ["DATABASE_URL"]
+    main(db_url)

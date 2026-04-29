@@ -33,3 +33,4 @@ pre-commit==3.7.0             # hooks git automatiques avant chaque commit
 # === Tests ===
 pytest==8.1.1                 # framework de tests
 pytest-cov==5.0.0             # mesure de la couverture de tests
+pytest-postgresql>=5.0.0
