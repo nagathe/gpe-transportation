@@ -17,3 +17,10 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[tool.flake8]
+max-line-length = 150
+ignore = ["E203", "W503", "E501"]
+per-file-ignores = [
+    "__init__.py:F401",  # Imports inutilisés dans __init__
+]
