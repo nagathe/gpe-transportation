@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 # GeoJSON officiel des gares GPE — Société du Grand Paris
 GPE_GARES_URL = (
-    "https://data.ratp.fr/api/explore/v2.1/catalog/"
-    "datasets/gares-du-grand-paris-express/exports/geojson"
+    "https://data.iledefrance-mobilites.fr/api/explore/v2.1/"
+    "catalog/datasets/emplacement-des-gares-idf/exports/geojson"
 )
 
 # Lignes du Grand Paris Express (hors prolongements RER existants)
@@ -128,9 +128,8 @@ def load_to_postgres(df: pd.DataFrame, engine: Engine) -> None:
     Raises:
         sqlalchemy.exc.SQLAlchemyError: Si le chargement échoue.
     """
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS raw"))
-        conn.commit()
 
     logger.info(f"Chargement raw.gpe_gares — {len(df)} gares")
 

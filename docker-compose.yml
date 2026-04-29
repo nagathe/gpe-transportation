@@ -1,6 +1,5 @@
 
 services:
-
   postgres:
     image: postgis/postgis:15-3.4
     platform: linux/amd64

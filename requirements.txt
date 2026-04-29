@@ -1,6 +1,7 @@
 # === Base de données ===
 psycopg2-binary==2.9.9        # driver PostgreSQL pour Python
-sqlalchemy==1.4.52            # ORM et connexion base de données
+#sqlalchemy==1.4.52            # ORM et connexion base de données
+sqlalchemy==2.0.30
 geoalchemy2==0.15.1           # extension PostGIS pour SQLAlchemy
 
 # === Ingestion & manipulation données ===

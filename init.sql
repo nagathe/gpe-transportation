@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS raw.gpe_gares (
     gare_id VARCHAR(50) PRIMARY KEY,
     gare_name VARCHAR(255),
     ligne VARCHAR(50),
-    latitude DECIMAL(10, 8),n
+    latitude DECIMAL(10, 8),
     longitude DECIMAL(11, 8),
     date_ouverture DATE
 );

@@ -1,142 +1,110 @@
 """
-Module d'ingestion des données GTFS Île-de-France.
-Télécharge, extrait et charge les stops et stop_times en base PostgreSQL.
+Ingestion du fichier GTFS Île-de-France.
+Télécharge le ZIP, extrait les fichiers et charge en base PostgreSQL (schema raw).
 """
 
 import logging
-import os
 import zipfile
-from io import BytesIO
+from pathlib import Path
 
 import pandas as pd
 import requests
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-GTFS_URL = (
-    "https://data.ile-de-france-mobilites.fr/api/explore/v2.1/"
-    "catalog/datasets/idfm-gtfs/exports/csv"
-)
-GTFS_FILES = ["stops.txt", "stop_times.txt", "trips.txt", "routes.txt"]
+GTFS_URL = "https://eu.ftp.opendatasoft.com/stif/GTFS/IDFM-gtfs.zip"
+RAW_DIR = Path("data/raw/gtfs")
+
+# Fichiers GTFS qu'on veut charger (on garde l'essentiel)
+GTFS_FILES = ["stops.txt", "routes.txt", "trips.txt", "stop_times.txt"]
 
 
-def download_gtfs(url: str = GTFS_URL, timeout: int = 30) -> bytes:
-    """
-    Télécharge le fichier GTFS zippé depuis l'URL donnée.
+def download_gtfs(url: str, dest_dir: Path) -> Path:
+    """Télécharge le ZIP GTFS et le sauvegarde localement.
 
     Args:
-        url: URL du fichier GTFS.
-        timeout: Timeout HTTP en secondes.
+        url: URL du fichier ZIP GTFS.
+        dest_dir: Répertoire de destination.
 
     Returns:
-        Contenu binaire du fichier zip.
-
-    Raises:
-        requests.HTTPError: Si la réponse HTTP est une erreur.
+        Chemin vers le fichier ZIP téléchargé.
     """
-    logger.info("Téléchargement GTFS depuis %s", url)
-    response = requests.get(url, timeout=timeout)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = dest_dir / "IDFM-gtfs.zip"
+
+    logger.info("Téléchargement du GTFS depuis %s", url)
+    response = requests.get(url, timeout=120)
     response.raise_for_status()
-    logger.info("Téléchargement terminé (%d bytes)", len(response.content))
-    return response.content
+
+    zip_path.write_bytes(response.content)
+    logger.info(
+        "Fichier sauvegardé : %s (%.1f MB)", zip_path, zip_path.stat().st_size / 1e6
+    )
+    return zip_path
 
 
-def extract_gtfs(zip_bytes: bytes) -> dict[str, pd.DataFrame]:
+def extract_gtfs(zip_path: Path, dest_dir: Path) -> None:
+    """Extrait les fichiers GTFS utiles du ZIP.
+
+    Args:
+        zip_path: Chemin vers le fichier ZIP.
+        dest_dir: Répertoire d'extraction.
     """
-    Extrait les fichiers depuis un zip GTFS en mémoire.
-
-    Returns:
-        Dict avec clé = nom du fichier sans .txt, valeur = DataFrame.
-
-    Raises:
-        zipfile.BadZipFile: Si le contenu n'est pas un zip valide.
-    """
-    result: dict[str, pd.DataFrame] = {}
-    with zipfile.ZipFile(BytesIO(zip_bytes)) as z:
+    logger.info("Extraction du ZIP dans %s", dest_dir)
+    with zipfile.ZipFile(zip_path, "r") as zf:
         for filename in GTFS_FILES:
-            if filename in z.namelist():
-                with z.open(filename) as f:
-                    key = filename.replace(".txt", "")
-                    result[key] = pd.read_csv(f, dtype=str)
-                    logger.info("%s : %d lignes extraites", filename, len(result[key]))
+            if filename in zf.namelist():
+                zf.extract(filename, dest_dir)
+                logger.info("Extrait : %s", filename)
             else:
-                logger.warning("%s absent du zip", filename)
-    return result
+                logger.warning("Fichier absent du ZIP : %s", filename)
 
 
-def parse_stops(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Nettoie et type le DataFrame des arrêts GTFS.
+def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
+    """Charge les fichiers GTFS en base dans le schema raw.
 
     Args:
-        df: DataFrame brut issu de stops.txt.
-
-    Returns:
-        DataFrame nettoyé avec stop_id, stop_name, stop_lat, stop_lon.
+        dest_dir: Répertoire contenant les fichiers .txt extraits.
+        engine: Connexion SQLAlchemy vers PostgreSQL.
     """
-    cols = ["stop_id", "stop_name", "stop_lat", "stop_lon"]
-    df = df[cols].dropna(subset=["stop_id", "stop_lat", "stop_lon"])
-    df["stop_lat"] = pd.to_numeric(df["stop_lat"], errors="coerce")
-    df["stop_lon"] = pd.to_numeric(df["stop_lon"], errors="coerce")
-    df = df.dropna(subset=["stop_lat", "stop_lon"])
-    logger.info("%d arrêts valides après nettoyage", len(df))
-    return df.reset_index(drop=True)
+    for filename in GTFS_FILES:
+        filepath = dest_dir / filename
+        if not filepath.exists():
+            logger.warning("Fichier introuvable, skip : %s", filepath)
+            continue
+
+        table_name = f"gtfs_{filepath.stem}"  # ex: gtfs_stops
+        logger.info("Chargement de %s → raw.%s", filename, table_name)
+
+        df = pd.read_csv(filepath, dtype=str, low_memory=False)
+        logger.info("  %d lignes, %d colonnes", len(df), len(df.columns))
+
+        df.to_sql(
+            name=table_name,
+            con=engine,
+            schema="raw",
+            if_exists="replace",
+            index=False,
+        )
+        logger.info("  ✓ Chargé en base")
 
 
-def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
-    """
-    Charge un DataFrame dans PostgreSQL (schéma raw).
+def main() -> None:
+    """Point d'entrée principal du script d'ingestion GTFS."""
+    # Connexion PostgreSQL (variables d'env à configurer)
+    import os
 
-    Args:
-        df: DataFrame à charger.
-        table: Nom de la table cible.
-        engine: Connexion SQLAlchemy.
-    """
-    logger.info("Chargement de %d lignes dans raw.%s", len(df), table)
-    df.to_sql(table, engine, schema="raw", if_exists="replace", index=False)
-    logger.info("Chargement terminé pour raw.%s", table)
+    db_url = os.environ.get("DATABASE_URL", "postgresql://gpe:gpe@localhost:5432/gpe")
+    engine = create_engine(db_url)
 
-
-def main(database_url: str) -> None:
-    """Point d'entrée principal du script d'ingestion GTFS.
-
-    Args:
-        database_url: URL de connexion Postgres (format SQLAlchemy).
-    """
-    logger.info("=== Début ingestion GTFS ===")
-
-    engine = create_engine(database_url)
-
-    # Créer le schéma raw s'il n'existe pas
-    with engine.connect() as conn:
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS raw"))
-        conn.commit()
-
-    # Télécharger et traiter GTFS
-    zip_bytes = download_gtfs()
-    dfs = extract_gtfs(zip_bytes)
-
-    # Charger stops
-    stops = parse_stops(dfs["stops"])
-    load_to_postgres(stops, "gtfs_stops", engine)
-
-    # Charger stop_times
-    if "stop_times" in dfs:
-        load_to_postgres(dfs["stop_times"], "gtfs_stop_times", engine)
-
-    # Charger trips
-    if "trips" in dfs:
-        load_to_postgres(dfs["trips"], "gtfs_trips", engine)
-
-    # Charger routes
-    if "routes" in dfs:
-        load_to_postgres(dfs["routes"], "gtfs_routes", engine)
-
-    logger.info("=== Ingestion GTFS terminée ===")
+    zip_path = download_gtfs(GTFS_URL, RAW_DIR)
+    extract_gtfs(zip_path, RAW_DIR)
+    load_to_postgres(RAW_DIR, engine)
+    logger.info("✅ Ingestion GTFS terminée")
 
 
 if __name__ == "__main__":
-    db_url = os.environ["DATABASE_URL"]
-    main(db_url)
+    main()
