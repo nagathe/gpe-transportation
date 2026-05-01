@@ -39,7 +39,6 @@ with DAG(
     tags=["gpe"],  # tag pour filtrer dans l'UI Airflow
     doc_md=__doc__,  # documentation visible dans l'UI Airflow
 ) as dag:
-
     # ------------------------------------------------------------------
     # Tâche 1 : ingestion des données brutes GPE
     # ------------------------------------------------------------------

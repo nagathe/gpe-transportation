@@ -104,7 +104,6 @@ def geojson_vide() -> dict:
 
 
 class TestParseGpe:
-
     def test_retourne_dataframe(self, geojson_valide: dict) -> None:
         """parse_gpe doit retourner un DataFrame pandas."""
         result = parse_gpe(geojson_valide)
@@ -168,7 +167,6 @@ class TestParseGpe:
 
 
 class TestDownloadGpe:
-
     def test_retourne_dict(self) -> None:
         """download_gpe doit retourner un dictionnaire (GeoJSON parsé)."""
         mock_response = MagicMock()
