@@ -1,0 +1,18 @@
+name: 'gpe'
+version: '1.0.0'
+config-version: 2
+
+profile: 'gpe'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  gpe:
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: mart
+      +materialized: table
