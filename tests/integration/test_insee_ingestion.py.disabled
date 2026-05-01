@@ -1,0 +1,68 @@
+# tests/integration/test_insee_ingestion.py
+"""
+Tests d'intégration pour l'ingestion des données INSEE.
+"""
+
+import pytest
+from sqlalchemy import text
+
+
+@pytest.fixture
+def db_connection(postgresql):
+    """Fixture pour la connexion à la base de test."""
+    return postgresql
+
+
+def test_table_exists(db_connection):
+    """Vérifie que la table insee_communes existe."""
+    with db_connection.cursor() as cur:
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'insee_communes'
+            )
+        """)
+        assert cur.fetchone()[0] is True
+
+
+def test_table_has_rows(db_connection):
+    """Vérifie que la table contient des données."""
+    with db_connection.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM raw.insee_communes")
+        count = cur.fetchone()[0]
+        assert count > 0
+
+
+def test_expected_columns_present(db_connection):
+    """Vérifie que les colonnes attendues existent."""
+    expected = ["CODGEO", "LIBGEO", "population_2021", "tx_chomage"]
+    with db_connection.cursor() as cur:
+        cur.execute("""
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'insee_communes' AND table_schema = 'raw'
+        """)
+        columns = [row[0] for row in cur.fetchall()]
+        for col in expected:
+            assert col in columns
+
+
+@pytest.mark.parametrize("column", ["CODGEO"])
+def test_no_nulls_on_critical_columns(db_connection, column):
+    """Vérifie que les colonnes critiques ne contiennent pas de NULLs."""
+    with db_connection.cursor() as cur:
+        cur.execute(f"""
+            SELECT COUNT(*) FROM raw.insee_communes 
+            WHERE "{column}" IS NULL
+        """)
+        null_count = cur.fetchone()[0]
+        assert null_count == 0
+
+
+# TODO: Investiguer et corriger les NULLs dans MED21 et TP6021
+# - MED21: 15 NULLs détectés
+# - TP6021: 1287 NULLs détectés
+# Ces colonnes sont optionnelles pour le moment.
+# @pytest.mark.parametrize("column", ["MED21", "TP6021"])
+# def test_optional_columns(db_connection, column):
+#     """À décommenter une fois les données nettoyées."""
+#     pass

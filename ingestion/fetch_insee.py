@@ -82,7 +82,9 @@ def parse_insee(raw_bytes: bytes) -> pd.DataFrame:
 
     for col in COLONNES_UTILES:
         if col != "CODGEO":  # plus de LIBGEO
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = pd.to_numeric(
+                df[col].str.replace(",", "."), errors="coerce"
+            )  # pour les décimales
 
     logger.info("%d communes IDF valides après nettoyage", len(df))
     return df.reset_index(drop=True)
