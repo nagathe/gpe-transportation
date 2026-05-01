@@ -36,8 +36,15 @@ def download_gtfs(url: str, dest_dir: Path) -> Path:
     zip_path = dest_dir / "IDFM-gtfs.zip"
 
     logger.info("Téléchargement du GTFS depuis %s", url)
-    response = requests.get(url, timeout=120)
-    response.raise_for_status()
+    try:
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
+    except requests.HTTPError as e:
+        logger.error("Échec du téléchargement GTFS : %s", e)
+        raise
+    except requests.ConnectionError as e:
+        logger.error("Erreur réseau GTFS : %s", e)
+        raise
 
     zip_path.write_bytes(response.content)
     logger.info(
@@ -76,20 +83,22 @@ def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
             logger.warning("Fichier introuvable, skip : %s", filepath)
             continue
 
-        table_name = f"gtfs_{filepath.stem}"  # ex: gtfs_stops
+        table_name = f"gtfs_{filepath.stem}"
         logger.info("Chargement de %s → raw.%s", filename, table_name)
 
-        df = pd.read_csv(filepath, dtype=str, low_memory=False)
-        logger.info("  %d lignes, %d colonnes", len(df), len(df.columns))
-
-        df.to_sql(
-            name=table_name,
-            con=engine,
-            schema="raw",
-            if_exists="replace",
-            index=False,
-        )
-        logger.info("  ✓ Chargé en base")
+        try:
+            df = pd.read_csv(filepath, dtype=str, low_memory=False)
+            df.to_sql(
+                name=table_name,
+                con=engine,
+                schema="raw",
+                if_exists="replace",
+                index=False,
+            )
+            logger.info("  ✓ Chargé en base : %d lignes", len(df))
+        except Exception as e:
+            logger.error("Échec chargement raw.%s : %s", table_name, e)
+            raise
 
 
 def main() -> None:

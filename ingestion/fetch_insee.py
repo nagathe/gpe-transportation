@@ -38,13 +38,19 @@ def download_insee(url: str = INSEE_URL, timeout: int = 120) -> bytes:
     """
     # Le site INSEE bloque les requêtes sans User-Agent navigateur
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " "AppleWebKit/537.36"
-        )
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
     }
     logger.info("Téléchargement INSEE depuis %s", url)
-    response = requests.get(url, headers=headers, timeout=timeout)
-    response.raise_for_status()
+    try:
+        response = requests.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+    except requests.HTTPError as e:
+        logger.error("Échec du téléchargement INSEE : %s", e)
+        raise
+    except requests.ConnectionError as e:
+        logger.error("Erreur réseau INSEE : %s", e)
+        raise
+
     logger.info("Téléchargement terminé (%d bytes)", len(response.content))
     return response.content
 
@@ -100,8 +106,12 @@ def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
         engine: Connexion SQLAlchemy.
     """
     logger.info("Chargement de %d lignes dans raw.%s", len(df), table)
-    df.to_sql(table, engine, schema="raw", if_exists="replace", index=False)
-    logger.info("Chargement terminé pour raw.%s", table)
+    try:
+        df.to_sql(table, engine, schema="raw", if_exists="replace", index=False)
+        logger.info("Chargement terminé pour raw.%s", table)
+    except Exception as e:
+        logger.error("Échec chargement raw.%s : %s", table, e)
+        raise
 
 
 def main(database_url: str) -> None:
