@@ -5,11 +5,14 @@ Télécharge et charge les indicateurs socio-économiques en base PostgreSQL.
 
 import logging
 import zipfile
-from io import BytesIO
+from io import BytesIO, StringIO  # StringIO déjà utile plus tard
 
 import pandas as pd
 import requests
+from dotenv import load_dotenv
 from sqlalchemy.engine import Engine
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,10 @@ INSEE_URL = (
 DEPTS_IDF = {"75", "77", "78", "91", "92", "93", "94", "95"}
 
 COLONNES_UTILES = ["CODGEO", "MED21", "TP6021", "NBPERSMENFISC21"]
+
+GEO_API_URL = (
+    "https://geo.api.gouv.fr/communes?fields=code,centre&format=json&geometry=centre"
+)
 
 
 def download_insee(url: str = INSEE_URL, timeout: int = 120) -> bytes:
@@ -96,18 +103,64 @@ def parse_insee(raw_bytes: bytes) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
+def enrich_with_geo(df: pd.DataFrame) -> pd.DataFrame:
+    """Enrichit les communes avec leurs coordonnées géographiques via GeoAPI.
+
+    Args:
+        df: DataFrame INSEE avec colonne CODGEO.
+
+    Returns:
+        DataFrame enrichi avec colonnes latitude et longitude.
+    """
+    logger.info("Téléchargement coordonnées communes depuis GeoAPI")
+    response = requests.get(GEO_API_URL, timeout=60)
+    response.raise_for_status()
+
+    rows = [
+        {
+            "CODGEO": c["code"],
+            "longitude": c["centre"]["coordinates"][0],
+            "latitude": c["centre"]["coordinates"][1],
+        }
+        for c in response.json()
+        if "centre" in c
+    ]
+
+    df_geo = pd.DataFrame(rows)
+    df_enriched = df.merge(df_geo, on="CODGEO", how="left")
+
+    manquantes = df_enriched["latitude"].isna().sum()
+    logger.info("%d communes sans coordonnées après merge", manquantes)
+
+    return df_enriched
+
+
 def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
     """
     Charge un DataFrame dans PostgreSQL (schéma raw).
+    Utilise TRUNCATE + INSERT pour préserver les vues dépendantes.
 
     Args:
         df: DataFrame à charger.
         table: Nom de la table cible.
         engine: Connexion SQLAlchemy.
     """
+    from sqlalchemy import text
+
     logger.info("Chargement de %d lignes dans raw.%s", len(df), table)
     try:
-        df.to_sql(table, engine, schema="raw", if_exists="replace", index=False)
+        # Vérifie si la table existe déjà
+        with engine.begin() as conn:
+            exists = engine.dialect.has_table(conn, table, schema="raw")
+
+        if exists:
+            # Vide la table sans la supprimer (les vues dbt restent valides)
+            with engine.begin() as conn:
+                conn.execute(text(f"TRUNCATE TABLE raw.{table}"))
+            df.to_sql(table, engine, schema="raw", if_exists="append", index=False)
+        else:
+            df.to_sql(table, engine, schema="raw", if_exists="replace", index=False)
+
         logger.info("Chargement terminé pour raw.%s", table)
     except Exception as e:
         logger.error("Échec chargement raw.%s : %s", table, e)
@@ -131,6 +184,7 @@ def main(database_url: str) -> None:
 
     raw_bytes = download_insee()
     df = parse_insee(raw_bytes)
+    df = enrich_with_geo(df)  # ← ajouter ici
     load_to_postgres(df, "insee_communes", engine)
 
     logger.info("=== Ingestion INSEE terminée ===")

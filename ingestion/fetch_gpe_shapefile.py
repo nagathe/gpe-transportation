@@ -15,8 +15,11 @@ from typing import Optional
 
 import geopandas as gpd
 import pandas as pd
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+load_dotenv()
 
 # Configuration logging
 logging.basicConfig(
@@ -174,7 +177,7 @@ def main():
     gdf = load_and_transform_shapefile(extract_dir)
 
     # Connexion PostgreSQL
-    db_url = os.getenv("DATABASE_URL", "postgresql://gpe:gpe@localhost:5432/gpe")
+    db_url = os.environ["DATABASE_URL"]
 
     engine = create_engine(db_url)
 

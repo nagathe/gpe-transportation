@@ -9,8 +9,11 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -106,7 +109,7 @@ def main() -> None:
     # Connexion PostgreSQL (variables d'env à configurer)
     import os
 
-    db_url = os.environ.get("DATABASE_URL", "postgresql://gpe:gpe@localhost:5432/gpe")
+    db_url = os.environ["DATABASE_URL"]
     engine = create_engine(db_url)
 
     zip_path = download_gtfs(GTFS_URL, RAW_DIR)

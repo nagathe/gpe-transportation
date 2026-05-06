@@ -11,8 +11,11 @@ from typing import Any
 
 import pandas as pd
 import requests
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,

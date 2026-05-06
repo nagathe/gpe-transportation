@@ -9,12 +9,13 @@ Le Grand Paris Express va-t-il réduire les inégalités de mobilité en banlieu
 ```bash
 pip install pre-commit
 pre-commit install
-Outils
-
-black : formatage automatique du code
-flake8 : détection d'erreurs de style
-isort : tri des imports
 ```
+
+**Outils**
+- black : formatage automatique du code
+- flake8 : détection d'erreurs de style
+- isort : tri des imports
+
 
 ## 2. Lancer le projet
 
