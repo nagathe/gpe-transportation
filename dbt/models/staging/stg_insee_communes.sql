@@ -3,9 +3,13 @@ with source as (
 )
 
 select
-    "CODGEO"                as code_commune,
-    "MED21"                 as revenu_median,
-    "TP6021"                as taux_pauvrete,
-    "NBPERSMENFISC21"       as nb_personnes_fiscales
+    "CODGEO"            as code_commune,
+    "P22_POP"           as population,
+    "MED_SL23"          as revenu_median,
+    "P22_CHOM1564"      as chomeurs,
+    "P22_ACT1564"       as actifs,
+    "C22_PMEN"          as nb_menages,
+    longitude,
+    latitude
 from source
 where "CODGEO" is not null
