@@ -4,6 +4,7 @@ Télécharge le ZIP, extrait les fichiers et charge en base PostgreSQL (schema r
 """
 
 import logging
+import os
 import zipfile
 from pathlib import Path
 
@@ -98,7 +99,7 @@ def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
                 if_exists="replace",
                 index=False,
             )
-            logger.info("  ✓ Chargé en base : %d lignes", len(df))
+            logger.info("  Chargé en base : %d lignes", len(df))
         except Exception as e:
             logger.error("Échec chargement raw.%s : %s", table_name, e)
             raise
@@ -106,16 +107,13 @@ def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
 
 def main() -> None:
     """Point d'entrée principal du script d'ingestion GTFS."""
-    # Connexion PostgreSQL (variables d'env à configurer)
-    import os
-
     db_url = os.environ["DATABASE_URL"]
     engine = create_engine(db_url)
 
     zip_path = download_gtfs(GTFS_URL, RAW_DIR)
     extract_gtfs(zip_path, RAW_DIR)
     load_to_postgres(RAW_DIR, engine)
-    logger.info("✅ Ingestion GTFS terminée")
+    logger.info("=== Ingestion GTFS terminée ===")
 
 
 if __name__ == "__main__":

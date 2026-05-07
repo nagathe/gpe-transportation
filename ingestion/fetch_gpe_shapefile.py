@@ -9,6 +9,7 @@ Projection: Lambert 93 (EPSG:2154) → à convertir en WGS84 (EPSG:4326)
 import logging
 import os
 import shutil
+import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Optional
@@ -39,15 +40,13 @@ def download_gpe_shapefile(url: str, output_path: Path) -> Path:
     Returns:
         Path: Chemin du fichier ZIP téléchargé
     """
-    import urllib.request
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Téléchargement GPE shapefile depuis {url}")
+    logger.info("Téléchargement GPE shapefile depuis %s", url)
     urllib.request.urlretrieve(url, output_path)
 
     size_mb = output_path.stat().st_size / (1024 * 1024)
-    logger.info(f"Fichier sauvegardé : {output_path} ({size_mb:.1f} MB)")
+    logger.info("Fichier sauvegardé : %s (%.1f MB)", output_path, size_mb)
 
     return output_path
 
@@ -65,13 +64,13 @@ def extract_shapefile(zip_path: Path, extract_dir: Path) -> Path:
     """
     extract_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Extraction du ZIP dans {extract_dir}")
+    logger.info("Extraction du ZIP dans %s", extract_dir)
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall(extract_dir)
 
     # Lister les fichiers extraits
     shp_files = list(extract_dir.glob("*.shp"))
-    logger.info(f"Fichiers extraits : {[f.name for f in extract_dir.glob('*')]}")
+    logger.info("Fichiers extraits : %s", [f.name for f in extract_dir.glob("*")])
 
     if not shp_files:
         raise FileNotFoundError(f"Aucun fichier .shp trouvé dans {extract_dir}")
@@ -95,17 +94,17 @@ def load_and_transform_shapefile(shp_dir: Path) -> gpd.GeoDataFrame:
         raise FileNotFoundError(f"Aucun .shp trouvé dans {shp_dir}")
 
     shp_path = shp_files[0]
-    logger.info(f"Lecture du shapefile : {shp_path}")
+    logger.info("Lecture du shapefile : %s", shp_path)
 
     gdf = gpd.read_file(shp_path)
 
-    logger.info(f"Chargé : {len(gdf)} gares")
-    logger.info(f"Colonnes : {gdf.columns.tolist()}")
-    logger.info(f"CRS original : {gdf.crs}")
+    logger.info("Chargé : %d gares", len(gdf))
+    logger.info("Colonnes : %s", gdf.columns.tolist())
+    logger.info("CRS original : %s", gdf.crs)
 
     # Convertir Lambert 93 → WGS84
     if gdf.crs != "EPSG:4326":
-        logger.info(f"Conversion {gdf.crs} → EPSG:4326")
+        logger.info("Conversion %s → EPSG:4326", gdf.crs)
         gdf = gdf.to_crs("EPSG:4326")
 
     # Extraire lat/lon de la géométrie
@@ -123,7 +122,8 @@ def load_and_transform_shapefile(shp_dir: Path) -> gpd.GeoDataFrame:
     )
 
     logger.info(
-        f"Transform OK : {gdf[['code_gare', 'nom_gare', 'ligne_gpe', 'latitude', 'longitude']].head()}"
+        "Transform OK : %s",
+        gdf[["code_gare", "nom_gare", "ligne_gpe", "latitude", "longitude"]].head(),
     )
 
     return gdf
@@ -140,7 +140,7 @@ def load_to_postgres(
         engine: Connexion SQLAlchemy à PostgreSQL
         table_name: Nom de la table de destination
     """
-    logger.info(f"Chargement {table_name} — {len(gdf)} gares")
+    logger.info("Chargement %s — %d gares", table_name, len(gdf))
 
     # PostGIS : utiliser to_postgis() avec if_exists='replace'
     gdf.to_postgis(
@@ -152,7 +152,7 @@ def load_to_postgres(
         chunksize=100,
     )
 
-    logger.info(f"✓ {table_name} chargée")
+    logger.info("%s chargée", table_name)
 
 
 def main():
@@ -185,9 +185,9 @@ def main():
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        logger.info("✓ Connexion PostgreSQL OK")
+        logger.info("Connexion PostgreSQL OK")
     except Exception as e:
-        logger.error(f"✗ Erreur connexion PostgreSQL : {e}")
+        logger.error("Erreur connexion PostgreSQL : %s", e)
         raise
 
     # Charger en base

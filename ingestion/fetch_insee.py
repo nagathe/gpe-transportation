@@ -4,12 +4,14 @@ Télécharge et charge les indicateurs socio-économiques en base PostgreSQL.
 """
 
 import logging
+import os
 import zipfile
-from io import BytesIO, StringIO  # StringIO déjà utile plus tard
+from io import BytesIO
 
 import pandas as pd
 import requests
 from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 load_dotenv()
@@ -22,8 +24,16 @@ INSEE_URL = (
 
 DEPTS_IDF = {"75", "77", "78", "91", "92", "93", "94", "95"}
 
-COLONNES_UTILES = ["CODGEO", "MED21", "TP6021", "NBPERSMENFISC21"]
-
+COLONNES_INSEE = {
+    "CODGEO": "code_commune",
+    "P22_POP": "population",
+    "MED_SL23": "revenu_median",
+    "P22_CHOM1564": "nb_chomeurs",
+    "P22_ACT1564": "nb_actifs",
+    "C22_PMEN": "nb_menages",
+}
+# Pas de taux de pauvreté dans ce fichier de données
+# on calculera juste taux_chomage = nb_chomeurs / nb_actifs. C'est suffisant pour l'analyse précarité vs mobilité
 GEO_API_URL = (
     "https://geo.api.gouv.fr/communes?fields=code,centre&format=json&geometry=centre"
 )
@@ -84,16 +94,16 @@ def parse_insee(raw_bytes: bytes) -> pd.DataFrame:
 
     logger.info("Colonnes disponibles : %s", df.columns.tolist())
 
-    manquantes = [c for c in COLONNES_UTILES if c not in df.columns]
+    manquantes = [c for c in COLONNES_INSEE if c not in df.columns]
     if manquantes:
         raise KeyError(f"Colonnes manquantes : {manquantes}")
 
-    df = df[COLONNES_UTILES].dropna(subset=["CODGEO"])
+    df = df[list(COLONNES_INSEE.keys())].dropna(subset=["CODGEO"])
 
     # Filtrer sur l'Île-de-France (2 premiers caractères du code commune)
     df = df[df["CODGEO"].str[:2].isin(DEPTS_IDF)]
 
-    for col in COLONNES_UTILES:
+    for col in COLONNES_INSEE:
         if col != "CODGEO":  # plus de LIBGEO
             df[col] = pd.to_numeric(
                 df[col].str.replace(",", "."), errors="coerce"
@@ -145,8 +155,6 @@ def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
         table: Nom de la table cible.
         engine: Connexion SQLAlchemy.
     """
-    from sqlalchemy import text
-
     logger.info("Chargement de %d lignes dans raw.%s", len(df), table)
     try:
         # Vérifie si la table existe déjà
@@ -175,8 +183,6 @@ def main(database_url: str) -> None:
     """
     logger.info("=== Début ingestion INSEE ===")
 
-    from sqlalchemy import create_engine, text
-
     engine = create_engine(database_url)
 
     with engine.begin() as conn:
@@ -191,8 +197,6 @@ def main(database_url: str) -> None:
 
 
 if __name__ == "__main__":
-    import os
-
     logging.basicConfig(level=logging.INFO)
     db_url = os.environ["DATABASE_URL"]
     main(db_url)

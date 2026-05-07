@@ -45,13 +45,13 @@ def download_gpe(url: str) -> dict[str, Any]:
     Raises:
         requests.HTTPError: Si le téléchargement échoue.
     """
-    logger.info(f"Téléchargement gares GPE depuis {url}")
+    logger.info("Téléchargement gares GPE depuis %s", url)
 
     try:
         response = requests.get(url, timeout=60)
         response.raise_for_status()
     except requests.HTTPError as e:
-        logger.error(f"Échec du téléchargement : {e}")
+        logger.error("Échec du téléchargement : %s", e)
         raise
 
     logger.info("Téléchargement OK")
@@ -78,7 +78,7 @@ def parse_gpe(geojson: dict[str, Any]) -> pd.DataFrame:
         ValueError: Si aucune gare GPE n'est trouvée après filtrage.
     """
     features = geojson.get("features", [])
-    logger.info(f"{len(features)} features trouvées dans le GeoJSON")
+    logger.info("%d features trouvées dans le GeoJSON", len(features))
 
     rows = []
     for feature in features:
@@ -114,7 +114,7 @@ def parse_gpe(geojson: dict[str, Any]) -> pd.DataFrame:
     # Supprime les lignes sans coordonnées (données incomplètes)
     df = df.dropna(subset=["longitude", "latitude"])
 
-    logger.info(f"{len(df)} gares chargées")
+    logger.info("%d gares chargées", len(df))
     return df
 
 
@@ -134,7 +134,7 @@ def load_to_postgres(df: pd.DataFrame, engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS raw"))
 
-    logger.info(f"Chargement raw.gpe_gares — {len(df)} gares")
+    logger.info("Chargement raw.gpe_gares — %d gares", len(df))
 
     try:
         df.to_sql(
@@ -147,7 +147,7 @@ def load_to_postgres(df: pd.DataFrame, engine: Engine) -> None:
         logger.info("raw.gpe_gares OK")
 
     except Exception as e:
-        logger.error(f"Échec chargement raw.gpe_gares : {e}")
+        logger.error("Échec chargement raw.gpe_gares : %s", e)
         raise
 
 
