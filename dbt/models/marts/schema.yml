@@ -1,0 +1,32 @@
+models:
+  - name: accessibilite_par_commune
+    description: "Accessibilité transport par commune IDF"
+    columns:
+      - name: code_commune
+        tests:
+          - not_null
+          - unique
+
+      - name: nb_arrets_actuels
+        tests:
+          - not_null:
+              config:
+                severity: warn
+
+  - name: gain_mobilite
+    description: "Gain de mobilité apporté par le GPE par commune"
+    columns:
+      - name: code_commune
+        tests:
+          - not_null
+          - unique
+
+      - name: categorie_gain
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - "Fort gain"
+                - "Gain modéré"
+                - "Gain faible (déjà bien desservi)"
+                - "Pas de gare GPE"

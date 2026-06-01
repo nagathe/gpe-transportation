@@ -38,6 +38,8 @@ GEO_API_URL = (
     "https://geo.api.gouv.fr/communes?fields=code,centre&format=json&geometry=centre"
 )
 
+GEO_API_NOMS_URL = "https://geo.api.gouv.fr/communes?fields=code,nom&format=json"
+
 
 def download_insee(url: str = INSEE_URL, timeout: int = 120) -> bytes:
     """
@@ -175,6 +177,36 @@ def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
         raise
 
 
+def fetch_commune_names(engine: Engine) -> None:
+    """Télécharge les noms de communes IDF depuis GeoAPI et charge en raw.
+
+    Args:
+        engine: Connexion SQLAlchemy.
+
+    Raises:
+        requests.HTTPError: Si l'appel API échoue.
+    """
+    logger.info("Téléchargement noms de communes depuis GeoAPI")
+
+    response = requests.get(GEO_API_NOMS_URL, timeout=60)
+    response.raise_for_status()
+
+    rows = [
+        {"code_commune": c["code"], "nom_commune": c["nom"]}
+        for c in response.json()
+        if "nom" in c
+    ]
+
+    df = pd.DataFrame(rows)
+
+    # Filtrer sur l'Île-de-France uniquement
+    df = df[df["code_commune"].str[:2].isin(DEPTS_IDF)]
+
+    logger.info("%d noms de communes récupérés", len(df))
+
+    load_to_postgres(df, "commune_names", engine)
+
+
 def main(database_url: str) -> None:
     """Point d'entrée principal du script d'ingestion INSEE.
 
@@ -190,8 +222,9 @@ def main(database_url: str) -> None:
 
     raw_bytes = download_insee()
     df = parse_insee(raw_bytes)
-    df = enrich_with_geo(df)  # ← ajouter ici
+    df = enrich_with_geo(df)
     load_to_postgres(df, "insee_communes", engine)
+    fetch_commune_names(engine)
 
     logger.info("=== Ingestion INSEE terminée ===")
 

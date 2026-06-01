@@ -1,16 +1,23 @@
+-- models/staging/stg_gpe_gares.sql
 with source as (
-    select * from raw.gpe_gares
+    select * from raw.gpe_gares_shapefile
+),
+
+cleaned as (
+    select
+        code_gare,
+        nom_gare,
+        ligne_gpe                           as ligne,
+        interconnexion,
+        latitude::double precision          as latitude,
+        longitude::double precision         as longitude,
+        geometry                            as geom,
+        -- Nettoyage date
+        nullif(trim(date_diffu), '')        as date_diffusion
+    from source
+    where nom_gare is not null
+      and latitude is not null
+      and longitude is not null
 )
 
-select
-    nom_gare,
-    ligne,
-    mise_en_service,
-    statut,
-    latitude,
-    longitude,
-    ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) as geom
-from source
-where nom_gare is not null
-  and latitude is not null
-  and longitude is not null
+select * from cleaned

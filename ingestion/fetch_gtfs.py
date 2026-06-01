@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 load_dotenv()
@@ -77,6 +77,9 @@ def extract_gtfs(zip_path: Path, dest_dir: Path) -> None:
 def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
     """Charge les fichiers GTFS en base dans le schema raw.
 
+    Supprime les vues dépendantes avant le rechargement pour éviter les
+    conflits de contrainte (DROP VIEW ... CASCADE).
+
     Args:
         dest_dir: Répertoire contenant les fichiers .txt extraits.
         engine: Connexion SQLAlchemy vers PostgreSQL.
@@ -91,6 +94,14 @@ def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
         logger.info("Chargement de %s → raw.%s", filename, table_name)
 
         try:
+            # Supprime les vues dépendantes avant de recréer la table raw
+            with engine.begin() as conn:
+                conn.execute(
+                    text(f"DROP VIEW IF EXISTS staging.stg_{table_name} CASCADE;")
+                )
+                logger.info("Vues dépendantes nettoyées pour raw.%s", table_name)
+
+            # Charge les données
             df = pd.read_csv(filepath, dtype=str, low_memory=False)
             df.to_sql(
                 name=table_name,
@@ -107,12 +118,15 @@ def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
 
 def main() -> None:
     """Point d'entrée principal du script d'ingestion GTFS."""
+    logger.info("=== Début ingestion GTFS ===")
+
     db_url = os.environ["DATABASE_URL"]
     engine = create_engine(db_url)
 
     zip_path = download_gtfs(GTFS_URL, RAW_DIR)
     extract_gtfs(zip_path, RAW_DIR)
     load_to_postgres(RAW_DIR, engine)
+
     logger.info("=== Ingestion GTFS terminée ===")
 
 
