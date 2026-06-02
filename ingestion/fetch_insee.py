@@ -18,6 +18,8 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+os.makedirs("data/raw/insee", exist_ok=True)
+
 INSEE_URL = (
     "https://www.insee.fr/fr/statistiques/fichier/5359146/" "dossier_complet.zip"
 )
@@ -34,11 +36,10 @@ COLONNES_INSEE = {
 }
 # Pas de taux de pauvreté dans ce fichier de données
 # on calculera juste taux_chomage = nb_chomeurs / nb_actifs. C'est suffisant pour l'analyse précarité vs mobilité
-GEO_API_URL = (
-    "https://geo.api.gouv.fr/communes?fields=code,centre&format=json&geometry=centre"
-)
 
-GEO_API_NOMS_URL = "https://geo.api.gouv.fr/communes?fields=code,nom&format=json"
+# URLs GeoAPI par département pour éviter de télécharger toute la France
+# Format : /departements/{code}/communes
+GEO_API_DEPT_URL = "https://geo.api.gouv.fr/departements/{dept}/communes?fields=code,{fields}&format=json"
 
 
 def download_insee(url: str = INSEE_URL, timeout: int = 120) -> bytes:
@@ -77,11 +78,15 @@ def download_insee(url: str = INSEE_URL, timeout: int = 120) -> bytes:
 def parse_insee(raw_bytes: bytes) -> pd.DataFrame:
     """Parse et nettoie les données INSEE communes.
 
+    Renomme les colonnes INSEE vers des noms lisibles (cf. COLONNES_INSEE),
+    calcule le taux de chômage et filtre sur l'Île-de-France.
+
     Args:
         raw_bytes: Contenu brut du fichier ZIP INSEE.
 
     Returns:
-        DataFrame nettoyé filtré sur l'Île-de-France.
+        DataFrame nettoyé filtré sur l'Île-de-France, colonnes renommées,
+        avec colonne taux_chomage calculée.
 
     Raises:
         KeyError: Si une colonne attendue est absente du fichier source.
@@ -106,40 +111,74 @@ def parse_insee(raw_bytes: bytes) -> pd.DataFrame:
     df = df[df["CODGEO"].str[:2].isin(DEPTS_IDF)]
 
     for col in COLONNES_INSEE:
-        if col != "CODGEO":  # plus de LIBGEO
+        if col != "CODGEO":
             df[col] = pd.to_numeric(
                 df[col].str.replace(",", "."), errors="coerce"
             )  # pour les décimales
+
+    # Appliquer le renommage vers des noms lisibles définis dans COLONNES_INSEE
+    df = df.rename(columns=COLONNES_INSEE)
+
+    # Calcul du taux de chômage : nb_chomeurs / nb_actifs
+    # Résultat entre 0 et 1, NaN si nb_actifs est nul ou manquant
+    df["taux_chomage"] = df["nb_chomeurs"] / df["nb_actifs"]
 
     logger.info("%d communes IDF valides après nettoyage", len(df))
     return df.reset_index(drop=True)
 
 
+def _fetch_geo_data(fields: str) -> list[dict]:
+    """Télécharge les données géographiques depuis GeoAPI pour les départements IDF.
+
+    Interroge l'API département par département pour éviter de télécharger
+    l'ensemble des ~35 000 communes françaises.
+
+    Args:
+        fields: Champs GeoAPI à récupérer (ex: "code,centre" ou "code,nom").
+
+    Returns:
+        Liste de dictionnaires bruts retournés par l'API.
+    """
+    rows = []
+    for dept in DEPTS_IDF:
+        url = GEO_API_DEPT_URL.format(dept=dept, fields=fields)
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+        rows.extend(response.json())
+        logger.info(
+            "Département %s : %d communes récupérées", dept, len(response.json())
+        )
+    return rows
+
+
 def enrich_with_geo(df: pd.DataFrame) -> pd.DataFrame:
     """Enrichit les communes avec leurs coordonnées géographiques via GeoAPI.
 
+    Interroge l'API département par département (IDF uniquement) pour limiter
+    le volume de données téléchargées.
+
     Args:
-        df: DataFrame INSEE avec colonne CODGEO.
+        df: DataFrame INSEE avec colonne code_commune (après renommage).
 
     Returns:
         DataFrame enrichi avec colonnes latitude et longitude.
     """
-    logger.info("Téléchargement coordonnées communes depuis GeoAPI")
-    response = requests.get(GEO_API_URL, timeout=60)
-    response.raise_for_status()
+    logger.info("Téléchargement coordonnées communes depuis GeoAPI (par département)")
+
+    raw = _fetch_geo_data(fields="centre")
 
     rows = [
         {
-            "CODGEO": c["code"],
+            "code_commune": c["code"],
             "longitude": c["centre"]["coordinates"][0],
             "latitude": c["centre"]["coordinates"][1],
         }
-        for c in response.json()
+        for c in raw
         if "centre" in c
     ]
 
     df_geo = pd.DataFrame(rows)
-    df_enriched = df.merge(df_geo, on="CODGEO", how="left")
+    df_enriched = df.merge(df_geo, on="code_commune", how="left")
 
     manquantes = df_enriched["latitude"].isna().sum()
     logger.info("%d communes sans coordonnées après merge", manquantes)
@@ -180,28 +219,24 @@ def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
 def fetch_commune_names(engine: Engine) -> None:
     """Télécharge les noms de communes IDF depuis GeoAPI et charge en raw.
 
+    Interroge l'API département par département (IDF uniquement) pour limiter
+    le volume de données téléchargées.
+
     Args:
         engine: Connexion SQLAlchemy.
 
     Raises:
         requests.HTTPError: Si l'appel API échoue.
     """
-    logger.info("Téléchargement noms de communes depuis GeoAPI")
+    logger.info("Téléchargement noms de communes depuis GeoAPI (par département)")
 
-    response = requests.get(GEO_API_NOMS_URL, timeout=60)
-    response.raise_for_status()
+    raw = _fetch_geo_data(fields="nom")
 
     rows = [
-        {"code_commune": c["code"], "nom_commune": c["nom"]}
-        for c in response.json()
-        if "nom" in c
+        {"code_commune": c["code"], "nom_commune": c["nom"]} for c in raw if "nom" in c
     ]
 
     df = pd.DataFrame(rows)
-
-    # Filtrer sur l'Île-de-France uniquement
-    df = df[df["code_commune"].str[:2].isin(DEPTS_IDF)]
-
     logger.info("%d noms de communes récupérés", len(df))
 
     load_to_postgres(df, "commune_names", engine)
