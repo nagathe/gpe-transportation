@@ -23,6 +23,7 @@ numpy==1.26.4                 # calcul numérique
 
 # === Visualisation / App ===
 streamlit==1.32.0             # application web interactive
+plotly==5.22.0
 
 # === Qualité du code ===
 black==24.3.0                 # formatage automatique du code

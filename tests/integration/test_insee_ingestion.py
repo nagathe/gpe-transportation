@@ -1,13 +1,13 @@
+# tests/integration/test_insee_ingestion.py
 """
 Tests d'intégration pour l'ingestion INSEE.
-
 Vérifie que les données INSEE sont correctement chargées en base.
+Les colonnes sont en minuscules (renommage appliqué dans fetch_insee.py).
 """
 
 import pytest
 from sqlalchemy import create_engine, text
 
-# Connexion au conteneur Postgres via Docker
 ENGINE = create_engine("postgresql://gpe:gpe@localhost:5432/gpe")
 
 
@@ -17,31 +17,41 @@ class TestINSEEIngestion:
     def test_table_exists(self):
         """Vérifie que la table raw.insee_communes existe."""
         with ENGINE.connect() as conn:
-            query = text(
+            count = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*) FROM information_schema.tables
+                    WHERE table_schema = 'raw' AND table_name = 'insee_communes'
                 """
-                SELECT COUNT(*)
-                FROM information_schema.tables
-                WHERE table_schema = 'raw' AND table_name = 'insee_communes'
-            """
-            )
-            count = conn.execute(query).scalar()
+                )
+            ).scalar()
             assert count == 1, "Table raw.insee_communes n'existe pas"
 
     def test_columns_exist(self):
-        """Vérifie que les colonnes attendues existent."""
+        """Vérifie que les colonnes attendues existent (en minuscules)."""
         with ENGINE.connect() as conn:
-            query = text(
+            result = conn.execute(
+                text(
+                    """
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_schema = 'raw' AND table_name = 'insee_communes'
                 """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = 'raw' AND table_name = 'insee_communes'
-            """
-            )
-            result = conn.execute(query).fetchall()
+                )
+            ).fetchall()
             columns = {row[0] for row in result}
 
-            # Les colonnes sont en MAJUSCULES dans ta base
-            expected = {"CODGEO", "MED21", "TP6021", "NBPERSMENFISC21"}
+            # Les colonnes sont renommées en minuscules par fetch_insee.py
+            expected = {
+                "code_commune",
+                "population",
+                "revenu_median",
+                "nb_chomeurs",
+                "nb_actifs",
+                "nb_menages",
+                "taux_chomage",
+                "latitude",
+                "longitude",
+            }
             missing = expected - columns
             assert (
                 missing == set()
@@ -50,164 +60,145 @@ class TestINSEEIngestion:
     def test_data_types(self):
         """Vérifie que les types de données sont corrects."""
         with ENGINE.connect() as conn:
-            query = text(
+            result = conn.execute(
+                text(
+                    """
+                    SELECT column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'raw' AND table_name = 'insee_communes'
+                    ORDER BY ordinal_position
                 """
-                SELECT column_name, data_type
-                FROM information_schema.columns
-                WHERE table_schema = 'raw' AND table_name = 'insee_communes'
-                ORDER BY ordinal_position
-            """
-            )
-            result = conn.execute(query).fetchall()
+                )
+            ).fetchall()
             columns = {row[0]: row[1] for row in result}
 
-            # CODGEO doit être text
             assert (
-                columns["CODGEO"] == "text"
-            ), f"CODGEO doit être text, trouvé {columns['CODGEO']}"
-
-            # Les indicateurs doivent être double precision
-            for col in ["MED21", "TP6021", "NBPERSMENFISC21"]:
+                columns["code_commune"] == "text"
+            ), f"code_commune doit être text, trouvé {columns['code_commune']}"
+            for col in ["population", "revenu_median", "nb_chomeurs", "nb_actifs"]:
                 assert (
                     columns[col] == "double precision"
                 ), f"{col} doit être double precision, trouvé {columns[col]}"
 
-    def test_codgeo_not_null(self):
-        """Vérifie que CODGEO (clé primaire) n'a pas de NULLs."""
+    def test_code_commune_not_null(self):
+        """Vérifie que code_commune (clé primaire) n'a pas de NULLs."""
         with ENGINE.connect() as conn:
-            query = text(
-                'SELECT COUNT(*) FROM raw.insee_communes WHERE "CODGEO" IS NULL'
-            )
-            null_count = conn.execute(query).scalar()
-            assert (
-                null_count == 0
-            ), f"NULLs trouvés dans CODGEO (clé primaire) : {null_count} rows"
+            null_count = conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM raw.insee_communes WHERE code_commune IS NULL"
+                )
+            ).scalar()
+            assert null_count == 0, f"NULLs trouvés dans code_commune : {null_count}"
 
     def test_data_not_empty(self):
         """Vérifie que la table n'est pas vide."""
         with ENGINE.connect() as conn:
-            query = text("SELECT COUNT(*) FROM raw.insee_communes")
-            count = conn.execute(query).scalar()
+            count = conn.execute(
+                text("SELECT COUNT(*) FROM raw.insee_communes")
+            ).scalar()
             assert count > 0, "Table raw.insee_communes est vide"
 
-    def test_codgeo_unique(self):
+    def test_code_commune_unique(self):
         """Vérifie que les codes communes sont uniques."""
         with ENGINE.connect() as conn:
-            query = text(
+            total, unique = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*), COUNT(DISTINCT code_commune)
+                    FROM raw.insee_communes
                 """
-                SELECT COUNT(*), COUNT(DISTINCT "CODGEO")
-                FROM raw.insee_communes
-            """
-            )
-            total, unique = conn.execute(query).fetchone()
+                )
+            ).fetchone()
             assert (
                 total == unique
-            ), f"Doublons détectés : {total} rows mais {unique} CODGEO uniques"
+            ), f"Doublons détectés : {total} rows mais {unique} code_commune uniques"
 
-    def test_med21_has_sufficient_coverage(self):
-        """Vérifie que MED21 a au moins 80% de couverture."""
+    def test_revenu_median_coverage(self):
+        """Vérifie que revenu_median a au moins 80% de couverture."""
         with ENGINE.connect() as conn:
-            query = text(
+            total, with_val, coverage_pct = conn.execute(
+                text(
+                    """
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(revenu_median) as with_val,
+                        ROUND(100.0 * COUNT(revenu_median) / COUNT(*), 2) as pct
+                    FROM raw.insee_communes
                 """
-                SELECT 
-                    COUNT(*) as total,
-                    COUNT("MED21") as with_med21,
-                    ROUND(100.0 * COUNT("MED21") / COUNT(*), 2) as coverage_pct
-                FROM raw.insee_communes
-            """
-            )
-            total, with_med21, coverage_pct = conn.execute(query).fetchone()
+                )
+            ).fetchone()
+            assert (
+                coverage_pct >= 80
+            ), f"revenu_median couverture insuffisante : {coverage_pct}% ({with_val}/{total})"
 
-            assert coverage_pct >= 80, (
-                f"MED21 couverture insuffisante : {coverage_pct}% "
-                f"({with_med21}/{total} communes)"
-            )
-
-    def test_tp6021_has_sufficient_coverage(self):
-        """Vérifie que TP6021 a au moins 35% de couverture."""
+    def test_taux_chomage_coverage(self):
+        """Vérifie que taux_chomage a au moins 35% de couverture."""
         with ENGINE.connect() as conn:
-            query = text(
+            total, with_val, coverage_pct = conn.execute(
+                text(
+                    """
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(taux_chomage) as with_val,
+                        ROUND(100.0 * COUNT(taux_chomage) / COUNT(*), 2) as pct
+                    FROM raw.insee_communes
                 """
-                SELECT 
-                    COUNT(*) as total,
-                    COUNT("TP6021") as with_tp6021,
-                    ROUND(100.0 * COUNT("TP6021") / COUNT(*), 2) as coverage_pct
-                FROM raw.insee_communes
-            """
-            )
-            total, with_tp6021, coverage_pct = conn.execute(query).fetchone()
+                )
+            ).fetchone()
+            assert (
+                coverage_pct >= 35
+            ), f"taux_chomage couverture insuffisante : {coverage_pct}% ({with_val}/{total})"
 
-            assert coverage_pct >= 35, (
-                f"TP6021 couverture insuffisante : {coverage_pct}% "
-                f"({with_tp6021}/{total} communes)"
-            )
-
-    def test_med21_reasonable_values(self):
+    def test_revenu_median_reasonable_values(self):
         """Vérifie que les revenus médians sont dans une plage raisonnable."""
         with ENGINE.connect() as conn:
-            query = text(
+            result = conn.execute(
+                text(
+                    """
+                    SELECT MIN(revenu_median), MAX(revenu_median)
+                    FROM raw.insee_communes
+                    WHERE revenu_median IS NOT NULL
                 """
-                SELECT MIN("MED21"), MAX("MED21")
-                FROM raw.insee_communes
-                WHERE "MED21" IS NOT NULL
-            """
-            )
-            result = conn.execute(query).fetchone()
+                )
+            ).fetchone()
 
-            # Gérer le cas où tout est NULL (très peu probable)
-            if result[0] is None or result[1] is None:
-                pytest.skip("MED21 : aucune donnée non-NULL")
+            if result[0] is None:
+                pytest.skip("revenu_median : aucune donnée non-NULL")
 
             min_val, max_val = result
-
-            # Revenus médians en Île-de-France : entre 10k€ et 100k€
             assert min_val >= 10000, f"Revenu médian anormalement bas : {min_val}€"
             assert max_val <= 100000, f"Revenu médian anormalement haut : {max_val}€"
 
-    def test_tp6021_reasonable_values(self):
-        """Vérifie que les taux de pauvreté sont entre 0 et 100."""
+    def test_taux_chomage_reasonable_values(self):
+        """Vérifie que les taux de chômage sont entre 0 et 1 (ratio, pas %)."""
         with ENGINE.connect() as conn:
-            query = text(
+            result = conn.execute(
+                text(
+                    """
+                    SELECT MIN(taux_chomage), MAX(taux_chomage)
+                    FROM raw.insee_communes
+                    WHERE taux_chomage IS NOT NULL
                 """
-                SELECT MIN("TP6021"), MAX("TP6021")
-                FROM raw.insee_communes
-                WHERE "TP6021" IS NOT NULL
-            """
-            )
-            result = conn.execute(query).fetchone()
+                )
+            ).fetchone()
 
-            # Gérer le cas où tout est NULL
-            if result[0] is None or result[1] is None:
-                pytest.skip("TP6021 : aucune donnée non-NULL")
+            if result[0] is None:
+                pytest.skip("taux_chomage : aucune donnée non-NULL")
 
             min_val, max_val = result
+            assert min_val >= 0, f"Taux de chômage négatif : {min_val}"
+            assert max_val <= 1, f"Taux de chômage > 1 (ratio attendu) : {max_val}"
 
-            assert min_val >= 0, f"Taux de pauvreté négatif détecté : {min_val}%"
-            assert max_val <= 100, f"Taux de pauvreté > 100 détecté : {max_val}%"
-
-
-# TODO: À améliorer
-# =============================================================================
-# 1. **Enrichissement des données** :
-#    - Ajouter `nom_commune` (jointure avec fichier COG INSEE)
-#    - Ajouter `latitude`, `longitude` (géolocalisation des centroides)
-#    - Ajouter `population_totale` (données socioéconomiques plus riches)
-#    - Ajouter `taux_chomage` (indicateur de précarité)
-#
-# 2. **Qualité des données** :
-#    - Valider les codes géographiques (format de CODGEO = 5 chiffres)
-#    - Vérifier la couverture géographique (Île-de-France uniquement ?)
-#    - Déterminer les valeurs manquantes acceptables par colonne ✅ (via tests coverage)
-#
-# 3. **Performance** :
-#    - Ajouter un index sur CODGEO (clé de jointure)
-#    - Créer des statistiques pour les requêtes complexes
-#
-# 4. **Testabilité** :
-#    - Créer une fixture pytest pour les connexions DB (DRY)
-#    - Paramétrer les seuils de couverture (pas hardcodés)
-#    - Ajouter des tests de performance (ingestion < 5 sec)
-#
-# 5. **Standardisation** :
-#    - Convertir les colonnes en minuscules en staging (convention dbt)
-#    - Ajouter des préfixes intelligibles (ex: `insee_revenu_median`)
+    def test_coordonnees_idf_plausibles(self):
+        """Vérifie que les coordonnées sont bien en Île-de-France."""
+        with ENGINE.connect() as conn:
+            result = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*) FROM raw.insee_communes
+                    WHERE latitude NOT BETWEEN 48.0 AND 49.5
+                       OR longitude NOT BETWEEN 1.4 AND 3.6
+                """
+                )
+            ).scalar()
+            assert result == 0, f"{result} communes avec coordonnées hors IDF"

@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 import requests
 
-from ingestion.fetch_insee import COLONNES_UTILES, download_insee, parse_insee
+from ingestion.fetch_insee import COLONNES_INSEE, download_insee, parse_insee
 
 
 def make_csv_bytes(df: pd.DataFrame) -> bytes:
@@ -30,13 +30,15 @@ def make_zip_bytes(df: pd.DataFrame) -> bytes:
 
 
 def make_df_insee(codgeo_list: list[str]) -> pd.DataFrame:
-    """Crée un DataFrame INSEE minimal avec les colonnes attendues (année 21)."""
+    """Crée un DataFrame INSEE minimal avec les colonnes attendues."""
     return pd.DataFrame(
         {
             "CODGEO": codgeo_list,
-            "MED21": ["25000"] * len(codgeo_list),
-            "TP6021": ["15.2"] * len(codgeo_list),
-            "NBPERSMENFISC21": ["5000"] * len(codgeo_list),
+            "P22_POP": ["10000"] * len(codgeo_list),
+            "MED_SL23": ["25000"] * len(codgeo_list),
+            "P22_CHOM1564": ["500"] * len(codgeo_list),
+            "P22_ACT1564": ["3000"] * len(codgeo_list),
+            "C22_PMEN": ["4000"] * len(codgeo_list),
         }
     )
 
@@ -71,7 +73,7 @@ def test_parse_insee_filtre_idf() -> None:
     """Seules les communes IDF doivent être retenues."""
     df = make_df_insee(["75056", "69123", "92012", "13055"])
     result = parse_insee(make_zip_bytes(df))
-    assert set(result["CODGEO"]) == {"75056", "92012"}
+    assert set(result["code_commune"]) == {"75056", "92012"}
 
 
 def test_parse_insee_retourne_dataframe() -> None:
@@ -83,17 +85,15 @@ def test_parse_insee_retourne_dataframe() -> None:
 def test_parse_insee_colonnes_utiles_presentes() -> None:
     df = make_df_insee(["78646"])
     result = parse_insee(make_zip_bytes(df))
-    for col in COLONNES_UTILES:
+    for col in COLONNES_INSEE.values():
         assert col in result.columns
 
 
 def test_parse_insee_leve_erreur_si_colonne_manquante() -> None:
     """Si une colonne attendue est absente du fichier source, on lève une KeyError."""
-    df = make_df_insee(["91228"]).drop(columns=["MED21"])
-    result_bytes = make_zip_bytes(df)
-
+    df = make_df_insee(["91228"]).drop(columns=["MED_SL23"])
     with pytest.raises(KeyError):
-        parse_insee(result_bytes)
+        parse_insee(make_zip_bytes(df))
 
 
 def test_parse_insee_colonne_dep_absente_du_resultat() -> None:
