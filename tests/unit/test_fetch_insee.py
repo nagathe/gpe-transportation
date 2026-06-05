@@ -3,6 +3,9 @@
 Tests unitaires pour ingestion/fetch_insee.py
 """
 
+import os
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -10,6 +13,18 @@ import pytest
 import requests
 
 from ingestion.fetch_insee import COLONNES_INSEE, download_insee, parse_insee
+
+
+def make_zip_file(df: pd.DataFrame) -> str:
+    """Crée un ZIP temporaire sur disque, retourne le path."""
+    import io
+    import zipfile
+
+    csv_bytes = make_csv_bytes(df)
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    with zipfile.ZipFile(tmp.name, "w") as zf:
+        zf.writestr("dossier_complet.csv", csv_bytes)
+    return tmp.name
 
 
 def make_csv_bytes(df: pd.DataFrame) -> bytes:
@@ -54,7 +69,8 @@ def test_download_insee_retourne_bytes() -> None:
     with patch("ingestion.fetch_insee.requests.get", return_value=mock_response):
         result = download_insee("http://fake-url.fr")
 
-    assert isinstance(result, bytes)
+    assert isinstance(result, Path)  # retourne un Path, pas des bytes
+    assert result.suffix == ".zip"
 
 
 def test_download_insee_leve_erreur_si_http_400() -> None:
@@ -72,19 +88,19 @@ def test_download_insee_leve_erreur_si_http_400() -> None:
 def test_parse_insee_filtre_idf() -> None:
     """Seules les communes IDF doivent être retenues."""
     df = make_df_insee(["75056", "69123", "92012", "13055"])
-    result = parse_insee(make_zip_bytes(df))
+    result = parse_insee(make_zip_file(df))
     assert set(result["code_commune"]) == {"75056", "92012"}
 
 
 def test_parse_insee_retourne_dataframe() -> None:
     df = make_df_insee(["93001"])
-    result = parse_insee(make_zip_bytes(df))
+    result = parse_insee(make_zip_file(df))
     assert isinstance(result, pd.DataFrame)
 
 
 def test_parse_insee_colonnes_utiles_presentes() -> None:
     df = make_df_insee(["78646"])
-    result = parse_insee(make_zip_bytes(df))
+    result = parse_insee(make_zip_file(df))
     for col in COLONNES_INSEE.values():
         assert col in result.columns
 
@@ -93,11 +109,11 @@ def test_parse_insee_leve_erreur_si_colonne_manquante() -> None:
     """Si une colonne attendue est absente du fichier source, on lève une KeyError."""
     df = make_df_insee(["91228"]).drop(columns=["MED_SL23"])
     with pytest.raises(KeyError):
-        parse_insee(make_zip_bytes(df))
+        parse_insee(make_zip_file(df))
 
 
 def test_parse_insee_colonne_dep_absente_du_resultat() -> None:
     """La colonne DEP ne doit pas apparaître en sortie."""
     df = make_df_insee(["94028"])
-    result = parse_insee(make_zip_bytes(df))
+    result = parse_insee(make_zip_file(df))
     assert "DEP" not in result.columns

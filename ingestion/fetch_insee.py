@@ -6,7 +6,9 @@ Télécharge et charge les indicateurs socio-économiques en base PostgreSQL.
 import logging
 import os
 import zipfile
-from io import BytesIO
+
+# from io import BytesIO
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -42,7 +44,7 @@ COLONNES_INSEE = {
 GEO_API_DEPT_URL = "https://geo.api.gouv.fr/departements/{dept}/communes?fields=code,{fields}&format=json"
 
 
-def download_insee(url: str = INSEE_URL, timeout: int = 120) -> bytes:
+def download_insee(url: str = INSEE_URL, timeout: int = 120) -> Path:
     """
     Télécharge le fichier INSEE depuis l'URL donnée.
 
@@ -72,17 +74,20 @@ def download_insee(url: str = INSEE_URL, timeout: int = 120) -> bytes:
         raise
 
     logger.info("Téléchargement terminé (%d bytes)", len(response.content))
-    return response.content
+    # return response.content
+    zip_path = Path("data/raw/insee/dossier_complet.zip")
+    zip_path.write_bytes(response.content)
+    return zip_path
 
 
-def parse_insee(raw_bytes: bytes) -> pd.DataFrame:
+def parse_insee(zip_path: Path) -> pd.DataFrame:
     """Parse et nettoie les données INSEE communes.
 
     Renomme les colonnes INSEE vers des noms lisibles (cf. COLONNES_INSEE),
     calcule le taux de chômage et filtre sur l'Île-de-France.
 
     Args:
-        raw_bytes: Contenu brut du fichier ZIP INSEE.
+        zip_files: Contenu brut du fichier ZIP INSEE.
 
     Returns:
         DataFrame nettoyé filtré sur l'Île-de-France, colonnes renommées,
@@ -92,7 +97,7 @@ def parse_insee(raw_bytes: bytes) -> pd.DataFrame:
         KeyError: Si une colonne attendue est absente du fichier source.
     """
     # Le fichier téléchargé est un ZIP contenant dossier_complet.csv
-    with zipfile.ZipFile(BytesIO(raw_bytes)) as zf:
+    with zipfile.ZipFile(zip_path) as zf:
         logger.info("Fichiers dans le ZIP : %s", zf.namelist())
         with zf.open("dossier_complet.csv") as f:
             df = pd.read_csv(
@@ -255,8 +260,8 @@ def main(database_url: str) -> None:
     with engine.begin() as conn:
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS raw"))
 
-    raw_bytes = download_insee()
-    df = parse_insee(raw_bytes)
+    zip_path = download_insee()
+    df = parse_insee(zip_path)
     df = enrich_with_geo(df)
     load_to_postgres(df, "insee_communes", engine)
     fetch_commune_names(engine)
