@@ -13,7 +13,7 @@ from pathlib import Path
 import geopandas as gpd
 import requests
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 load_dotenv()
@@ -133,25 +133,32 @@ def parse_gpe(extract_dir: Path) -> gpd.GeoDataFrame:
     gdf = gdf[gdf["ligne_gpe"].isin(LIGNES_GPE)].copy()
     logger.info("Filtrage lignes GPE : %d → %d gares", avant, len(gdf))
 
-    # gdf["source"] = "shapefile_sdgp"
     return gdf[["nom_gare", "ligne_gpe", "interconnexion", "source", "geometry"]]
 
 
 def load_to_postgres(gdf: gpd.GeoDataFrame, engine: Engine) -> None:
-    """Charge le GeoDataFrame en base dans raw.gpe_gares (replace).
+    """Charge le GeoDataFrame en base dans raw.gpe_gares.
+    Utilise TRUNCATE + INSERT pour préserver les vues dépendantes.
 
     Args:
         gdf: GeoDataFrame des gares GPE nettoyé.
         engine: Connexion SQLAlchemy vers PostgreSQL/PostGIS.
     """
     logger.info("Chargement de %d gares dans raw.gpe_gares", len(gdf))
-    gdf.to_postgis(
-        name="gpe_gares",
-        con=engine,
-        schema="raw",
-        if_exists="replace",
-        index=False,
-    )
+    with engine.begin() as conn:
+        exists = engine.dialect.has_table(conn, "gpe_gares", schema="raw")
+
+    if exists:
+        with engine.begin() as conn:
+            conn.execute(text("TRUNCATE TABLE raw.gpe_gares"))
+        gdf.to_postgis(
+            name="gpe_gares", con=engine, schema="raw", if_exists="append", index=False
+        )
+    else:
+        gdf.to_postgis(
+            name="gpe_gares", con=engine, schema="raw", if_exists="replace", index=False
+        )
+
     logger.info("Chargement terminé")
 
 
@@ -160,7 +167,7 @@ def load_to_postgres(gdf: gpd.GeoDataFrame, engine: Engine) -> None:
 # ---------------------------------------------------------------------------
 
 
-def run(database_url: str) -> None:
+def main(database_url: str) -> None:
     """Enchaîne téléchargement → extraction → transformation → chargement.
 
     Args:
@@ -178,4 +185,4 @@ def run(database_url: str) -> None:
 
 
 if __name__ == "__main__":
-    run(os.environ["DATABASE_URL"])
+    main(os.environ["DATABASE_URL"])

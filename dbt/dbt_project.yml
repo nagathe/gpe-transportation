@@ -16,3 +16,11 @@ models:
     marts:
       +schema: mart
       +materialized: table
+
+vars:
+  rayon_gpe_metres: 2000
+  seuil_sous_desserte: 10
+  seuil_gain_modere: 50
+  seuil_revenu_q1: 22000
+  seuil_revenu_q2: 27000
+  seuil_revenu_q3: 33000

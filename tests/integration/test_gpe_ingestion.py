@@ -4,11 +4,13 @@ Tests d'intégration pour l'ingestion GPE (shapefile → raw.gpe_gares).
 Vérifie que la table est bien chargée avec les bonnes colonnes et données.
 """
 
+import os
+
 import pytest
 import sqlalchemy
 from sqlalchemy import text
 
-ENGINE = sqlalchemy.create_engine("postgresql://gpe:gpe@localhost:5432/gpe")
+ENGINE = sqlalchemy.create_engine(os.environ["DATABASE_URL"])
 
 # Colonnes produites par fetch_gpe.py (version shapefile)
 EXPECTED_COLUMNS = {"nom_gare", "ligne_gpe", "interconnexion", "source", "geometry"}

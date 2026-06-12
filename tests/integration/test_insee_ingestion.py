@@ -5,10 +5,12 @@ Vérifie que les données INSEE sont correctement chargées en base.
 Les colonnes sont en minuscules (renommage appliqué dans fetch_insee.py).
 """
 
+import os
+
 import pytest
 from sqlalchemy import create_engine, text
 
-ENGINE = create_engine("postgresql://gpe:gpe@localhost:5432/gpe")
+ENGINE = create_engine(os.environ["DATABASE_URL"])
 
 
 class TestINSEEIngestion:

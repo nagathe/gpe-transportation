@@ -1,63 +1,87 @@
-# =============================================================================
-# Makefile — Projet Grand Paris Express
-#
-# Usage :
-#   make db-init        Crée les schemas et tables raw
-#   make ingest         Lance tous les scripts d'ingestion
-#   make dbt-run        Transformations dbt
-#   make test           Lance les tests pytest
-#   make lint           Vérifie le style (black, flake8, isort)
-#   make all            Pipeline complet
-# =============================================================================
+SHELL := /bin/bash
+PYTHON ?= python
+DBT_DIR := dbt
 
-.PHONY: db-init ingest dbt-run test lint all
+.DEFAULT_GOAL := help
 
-# -----------------------------------------------------------------------------
-# Base de données
-# -----------------------------------------------------------------------------
+.PHONY: help \
+	docker-up docker-down \
+	check-db-url db-init \
+	ingest ingest-gtfs ingest-insee ingest-gpe \
+	dbt-run dbt-test dbt-build \
+	test test-unit test-integration \
+	lint format typecheck all
 
-db-init:
-    psql $(DATABASE_URL) -f db/init_schemas.sql
-    psql $(DATABASE_URL) -f db/create_tables.sql
+help:
+	@printf "Commandes disponibles:\n"
+	@printf "  make docker-up         Demarre Postgres, Airflow et Grafana\n"
+	@printf "  make docker-down       Arrete les services Docker\n"
+	@printf "  make db-init           Initialise schemas/extensions/tables via init.sql\n"
+	@printf "  make ingest            Lance les 3 ingestions: GTFS, INSEE, GPE\n"
+	@printf "  make ingest-gtfs       Lance uniquement l'ingestion GTFS\n"
+	@printf "  make ingest-insee      Lance uniquement l'ingestion INSEE\n"
+	@printf "  make ingest-gpe        Lance uniquement l'ingestion GPE\n"
+	@printf "  make dbt-run           Execute les modeles dbt\n"
+	@printf "  make dbt-test          Execute les tests dbt\n"
+	@printf "  make test-unit         Execute les tests unitaires\n"
+	@printf "  make test-integration  Execute les tests d'integration\n"
+	@printf "  make test              Execute toute la suite pytest\n"
+	@printf "  make lint              Verifie black, isort et flake8\n"
+	@printf "  make format            Formate le code Python\n"
+	@printf "  make typecheck         Execute mypy\n"
+	@printf "  make all               db-init, ingest, dbt-run, dbt-test\n"
 
-# -----------------------------------------------------------------------------
-# Ingestion
-# -----------------------------------------------------------------------------
+docker-up:
+	docker compose up -d
 
-ingest:
-    python ingestion/fetch_gtfs.py
-    python ingestion/fetch_insee.py
-    python ingestion/fetch_gpe.py
+docker-down:
+	docker compose down
 
-# -----------------------------------------------------------------------------
-# Transformations dbt
-# -----------------------------------------------------------------------------
+check-db-url:
+	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL doit etre defini, ex: postgresql://gpe:gpe@localhost:5432/gpe" && exit 1)
+
+db-init: check-db-url
+	psql "$$DATABASE_URL" -f init.sql
+
+ingest: ingest-gtfs ingest-insee ingest-gpe
+
+ingest-gtfs: check-db-url
+	$(PYTHON) ingestion/fetch_gtfs.py
+
+ingest-insee: check-db-url
+	$(PYTHON) ingestion/fetch_insee.py
+
+ingest-gpe: check-db-url
+	$(PYTHON) ingestion/fetch_gpe.py
 
 dbt-run:
-    cd dbt && dbt run
+	cd $(DBT_DIR) && dbt run
 
 dbt-test:
-    cd dbt && dbt test
+	cd $(DBT_DIR) && dbt test
 
-# -----------------------------------------------------------------------------
-# Qualité
-# -----------------------------------------------------------------------------
-
-lint:
-    black --check .
-    isort --check .
-    flake8 .
-
-format:
-    black .
-    isort .
+dbt-build:
+	cd $(DBT_DIR) && dbt build
 
 test:
-    pytest tests/
+	pytest tests/
 
-# -----------------------------------------------------------------------------
-# Pipeline complet
-# -----------------------------------------------------------------------------
+test-unit:
+	pytest tests/unit/
 
-all: db-init ingest dbt-run
+test-integration:
+	pytest tests/integration/
 
+lint:
+	black --check .
+	isort --check-only .
+	flake8 .
+
+format:
+	black .
+	isort .
+
+typecheck:
+	mypy ingestion tests
+
+all: db-init ingest dbt-run dbt-test

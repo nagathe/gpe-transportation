@@ -10,6 +10,11 @@
 --
 -- Granularité : 1 ligne par commune INSEE
 --
+-- Modifications v2 :
+--   - Ajout nom_commune (lisibilité des visu)
+--   - Ajout latitude, longitude, geom (nécessaires pour les cartes)
+--   - geom calculée ici une seule fois, propagée aux marts suivants
+--
 -- Notes métier :
 --   - Le rayon de 1km est une convention standard pour l'accessibilité piétonne
 --   - On utilise ::geography pour un calcul de distance en mètres (pas en degrés)
@@ -29,10 +34,13 @@ stops as (
 stops_par_commune as (
     select
         c.code_commune,
+        c.nom_commune,        -- ajouté v2 : nom lisible pour les visu
         c.population,
         c.revenu_median,
         c.nb_chomeurs,
         c.nb_actifs,
+        c.latitude,           -- ajouté v2 : coordonnées pour les cartes
+        c.longitude,          -- ajouté v2 : coordonnées pour les cartes
         -- Jointure spatiale : on compte les arrêts dans un rayon de 1km
         -- autour du centroïde de chaque commune
         count(s.stop_id) as nb_arrets_actuels
@@ -45,18 +53,27 @@ stops_par_commune as (
         )
     group by
         c.code_commune,
+        c.nom_commune,
         c.population,
         c.revenu_median,
         c.nb_chomeurs,
-        c.nb_actifs
+        c.nb_actifs,
+        c.latitude,
+        c.longitude
 )
 
 select
     code_commune,
+    nom_commune,
     population,
     revenu_median,
     nb_chomeurs,
     nb_actifs,
+    latitude,
+    longitude,
+    -- geom calculée une seule fois ici et propagée aux marts aval
+    -- évite de recalculer st_makepoint à chaque jointure spatiale
+    st_makepoint(longitude, latitude)::geometry as geom,
     nb_arrets_actuels,
     -- Indicateur normalisé pour comparer communes de tailles différentes
     -- Ex : une commune de 10 000 hab avec 5 arrêts = 5.0

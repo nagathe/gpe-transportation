@@ -17,7 +17,6 @@ from ingestion.fetch_insee import COLONNES_INSEE, download_insee, parse_insee
 
 def make_zip_file(df: pd.DataFrame) -> str:
     """Crée un ZIP temporaire sur disque, retourne le path."""
-    import io
     import zipfile
 
     csv_bytes = make_csv_bytes(df)

@@ -6,8 +6,6 @@ Télécharge et charge les indicateurs socio-économiques en base PostgreSQL.
 import logging
 import os
 import zipfile
-
-# from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
@@ -19,8 +17,6 @@ from sqlalchemy.engine import Engine
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-os.makedirs("data/raw/insee", exist_ok=True)
 
 INSEE_URL = (
     "https://www.insee.fr/fr/statistiques/fichier/5359146/" "dossier_complet.zip"
@@ -53,7 +49,7 @@ def download_insee(url: str = INSEE_URL, timeout: int = 120) -> Path:
         timeout: Timeout HTTP en secondes.
 
     Returns:
-        Contenu binaire du fichier ZIP.
+        Path vers le fichier ZIP téléchargé.
 
     Raises:
         requests.HTTPError: Si la réponse HTTP est une erreur.
@@ -241,6 +237,19 @@ def fetch_commune_names(engine: Engine) -> None:
         {"code_commune": c["code"], "nom_commune": c["nom"]} for c in raw if "nom" in c
     ]
 
+    # Paris : GeoAPI retourne 75056 mais INSEE utilise les arrondissements 75101-75120
+    paris_arrondissements = [
+        {
+            "code_commune": f"751{i:02d}",
+            "nom_commune": f"Paris {i}{'er' if i == 1 else 'e'} Arrondissement",
+        }
+        for i in range(1, 21)
+    ]
+    rows.extend(paris_arrondissements)
+
+    # Saint-Ouen : renommée Saint-Ouen-sur-Seine en 2019, INSEE conserve l'ancien code 93059
+    rows.append({"code_commune": "93059", "nom_commune": "Saint-Ouen-sur-Seine"})
+
     df = pd.DataFrame(rows)
     logger.info("%d noms de communes récupérés", len(df))
 
@@ -255,6 +264,7 @@ def main(database_url: str) -> None:
     """
     logger.info("=== Début ingestion INSEE ===")
 
+    os.makedirs("data/raw/insee", exist_ok=True)
     engine = create_engine(database_url)
 
     with engine.begin() as conn:

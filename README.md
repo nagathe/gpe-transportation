@@ -1,92 +1,119 @@
-# Projet Pipeline Data : Grand Paris Express
-***Répondre à la problématique suivante :***
-Le Grand Paris Express va-t-il réduire les inégalités de mobilité en banlieue ?
-off the rec : mesure de qui gagne quoi en accessibilité avec le GPE, et est-ce que ce sont les zones les plus précaires qui en bénéficient le plus ?
+# Grand Paris Express — Pipeline Data
 
+**Question centrale :** Le Grand Paris Express va-t-il réduire les inégalités de mobilité en banlieue ?
 
-## 1. Installation
+Ce projet mesure, commune par commune en Île-de-France, qui gagne en accessibilité avec le GPE —
+et si ce sont bien les zones les plus précaires qui en bénéficient le plus.
 
-```bash
-pip install pre-commit
-pre-commit install
+---
+
+## Architecture
+
+```
+Ingestion (Python)        Staging (dbt views)           Marts (dbt tables)
+─────────────────         ───────────────────           ──────────────────
+fetch_gtfs.py      →  stg_gtfs_stops            →  accessibilite_par_commune
+fetch_insee.py     →  stg_insee_communes         →  gain_mobilite
+fetch_gpe.py       →  stg_gpe_gares              →  precarite_vs_mobilite
 ```
 
-**Outils**
-- black : formatage automatique du code
-- flake8 : détection d'erreurs de style
-- isort : tri des imports
+**Sources de données :**
+- GTFS IDFM — réseau de transport actuel (arrêts, lignes)
+- INSEE — revenus, chômage, population par commune IDF
+- Shapefile SdGP — futures gares GPE (lignes 15/16/17/18)
 
+---
 
-## 2. Lancer le projet
+## Installation
 
-### 2.1 Prérequis
-- Docker Desktop installé et **démarré**
+### Prérequis
+- Docker Desktop
 - Python 3.11+
 
-### 2.2 Démarrer les services
+### 1. Configurer l'environnement
 
-#### Ouvrir Docker Desktop puis :
 ```bash
-docker compose up -d
+cp .env.exemple .env
+# Remplir les valeurs dans .env
 ```
 
-#### Vérifier que tout tourne
-```bash
-docker ps
-```
+### 2. Installer les dépendances Python
 
-#### Services disponibles :
-
-| Services | URL |
-|-----------|-----------|
-| Airflow | http://localhost:8080 |
-| Grafana | http://localhost:3000 |
-| PostgreSQL | http://localhost:5432 |
-
-
-### 2.3 Initialiser la base de données
-```bash
-docker exec -it gpe-postgres-1 psql -U gpe -d gpe -c "CREATE DATABASE gpe_test;"
-```
-
-### 2.4 Installer les dépendances Python
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pre-commit install
 ```
 
-### 2.5 Lancement du pipeline
-##### Lancement de l'ingestion
-##### Lancement du chargement
-##### Lancement du traitement et des transormations
+### 3. Démarrer les services
 
-
-## 3. Qualité du code
-
-Les hooks pre-commit sont configurés pour s'exécuter à chaque `git commit`
-
-### 3.1 Lancer les tests
 ```bash
-export DATABASE_URL_TEST="postgresql://gpe:gpe@localhost:5432/gpe_test"
-pytest tests/ -v
+make docker-up
 ```
 
+| Service    | URL                   |
+|------------|-----------------------|
+| Airflow    | http://localhost:8080 |
+| Grafana    | http://localhost:3000 |
+| PostgreSQL | localhost:5432        |
 
+---
 
+## Lancer le pipeline
 
-### divers notes 
-75056 = Paris entier (2M habitants, 277 arrêts) ✅
-75101-75104 = arrondissements de Paris avec 0 arrêts — c'est normal, le GTFS regroupe tout sur le code commune Paris (75056)
-Source GPE : shapefile SdGP 2016 — 54 gares (lignes 15/16/17/18)
-Données partielles : tracé définitif non reflété pour L16/L17/L18
+```bash
+export DATABASE_URL=postgresql://gpe:gpe@localhost:5432/gpe
 
-### explications des marts 
-Dans une architecture ELT, les données passent par trois couches : Raw (données brutes), Staging (nettoyage et typage), Mart (modèles analytiques finaux).
-Le dossier mart est la couche finale. C'est ici qu'on répond aux questions métier du projet, avec trois modèles :
+make db-init       # Crée les schémas et tables
+make ingest        # Télécharge et charge les données brutes
+make dbt-run       # Transforme raw → staging → mart
+make dbt-test      # Vérifie la qualité des données
+```
 
-accessibilite_par_commune — nombre d'arrêts de transport actuels dans un rayon de 2 km par commune. La photographie de la mobilité aujourd'hui.
-gain_mobilite — nombre de futures gares GPE à moins de 2 km par commune, avec une catégorisation (fort gain / modéré / aucun).
-precarite_vs_mobilite — croisement mobilité × données INSEE (revenu médian, chômage). C'est le cœur de la question du projet : le GPE bénéficie-t-il aux communes qui en ont le plus besoin ?
+Ou tout en une commande :
 
-Ces trois tables alimentent directement les dashboards. Tout le travail analytique est fait ici, en SQL versionné dans Git, de façon traçable et reproductible.
+```bash
+make all
+```
+
+---
+
+## Tests
+
+```bash
+make test              # Tous les tests
+make test-unit         # Tests unitaires uniquement
+make test-integration  # Tests d'intégration uniquement
+```
+
+---
+
+## Qualité du code
+
+```bash
+make lint       # Vérifie black, isort, flake8
+make format     # Formate le code automatiquement
+make typecheck  # Vérifie les types avec mypy
+```
+
+Les hooks pre-commit s'exécutent automatiquement à chaque `git commit`.
+
+---
+
+## Structure du projet
+
+```
+gpe/
+├── ingestion/        # Scripts Python de téléchargement et chargement
+├── dbt/              # Transformations SQL (staging + marts)
+│   └── models/
+│       ├── staging/  # Nettoyage et typage des données brutes
+│       └── marts/    # Modèles analytiques finaux
+├── tests/
+│   ├── unit/         # Tests unitaires (parsing, transformations)
+│   └── integration/  # Tests d'intégration (données en base)
+├── docker-compose.yml
+├── init.sql          # DDL : schémas, tables, extensions PostGIS
+└── health_check.sql  # Requêtes d'audit de la base
+```
