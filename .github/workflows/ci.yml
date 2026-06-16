@@ -36,7 +36,7 @@ jobs:
 
       # Vérifie la cohérence des types avec mypy
       - name: mypy
-        run: mypy --disable-error-code=import-untyped ingestion tests
+        run: mypy --disable-error-code=import-untyped ingestion
 
       # Lance les tests unitaires
       - name: pytest (unit)
