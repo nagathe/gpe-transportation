@@ -25,6 +25,9 @@ numpy==1.26.4                 # calcul numérique
 streamlit==1.32.0             # application web interactive
 plotly==5.22.0
 
+# === Configuration ===
+python-dotenv==1.0.0          # charger variables d'env depuis .env
+
 # === Qualité du code ===
 black==24.3.0                 # formatage automatique du code
 flake8==7.0.0                 # linting (détection d'erreurs de style)
