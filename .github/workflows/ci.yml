@@ -13,6 +13,22 @@ jobs:
     # Exécute sur un serveur Ubuntu
     runs-on: ubuntu-latest
 
+    # Service PostgreSQL pour les tests d'intégration
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: gpe
+          POSTGRES_PASSWORD: gpe
+          POSTGRES_DB: gpe_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     steps:
       # Récupère le code du repo
       - uses: actions/checkout@v4
@@ -25,6 +41,20 @@ jobs:
       # Installe les dépendances du projet
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      # Initialise la base de données de test
+      - name: Setup test database
+        run: psql -h localhost -U gpe -d gpe_test -f init.sql
+        env:
+          PGPASSWORD: gpe
+
+      # Peuple la base avec les données de test
+      - name: Seed test database
+        run: |
+          export DATABASE_URL="postgresql://gpe:gpe@localhost:5432/gpe_test"
+          python -c "from ingestion.fetch_gpe import main; main('$DATABASE_URL')"
+          python -c "from ingestion.fetch_insee import main; main('$DATABASE_URL')"
+          python -c "from ingestion.fetch_gtfs import main; main('$DATABASE_URL')"
 
       # Vérifie le formatage du code avec black
       - name: black
@@ -41,3 +71,9 @@ jobs:
       # Lance les tests unitaires
       - name: pytest (unit)
         run: pytest tests/unit/ -v
+
+      # Lance les tests intégration
+      - name: pytest (integration)
+        run: pytest tests/integration/ -v
+        env:
+          DATABASE_URL: postgresql://gpe:gpe@localhost:5432/gpe_test
