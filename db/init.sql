@@ -18,10 +18,8 @@ CREATE TABLE IF NOT EXISTS raw.gtfs_stops (
     location_type INT,
     parent_station VARCHAR(50),
     stop_timezone VARCHAR(50),
-    wheelchair_boarding INT,
-    geom GEOMETRY(Point, 4326)
+    wheelchair_boarding INT
 );
-CREATE INDEX IF NOT EXISTS idx_gtfs_stops_geom ON raw.gtfs_stops USING GIST(geom);
 
 CREATE TABLE IF NOT EXISTS raw.gtfs_routes (
     route_id TEXT,

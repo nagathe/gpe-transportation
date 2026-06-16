@@ -116,15 +116,12 @@ def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
             raise
 
 
-def main(database_url: str) -> None:
-    """Point d'entrée principal du script d'ingestion GTFS.
-
-    Args:
-        database_url: URL de connexion PostgreSQL (format SQLAlchemy).
-    """
+def main() -> None:
+    """Point d'entrée principal du script d'ingestion GTFS."""
     logger.info("=== Début ingestion GTFS ===")
 
-    engine = create_engine(database_url)
+    db_url = os.environ["DATABASE_URL"]
+    engine = create_engine(db_url)
 
     zip_path = download_gtfs(GTFS_URL, RAW_DIR)
     extract_gtfs(zip_path, RAW_DIR)

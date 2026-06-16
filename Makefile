@@ -41,7 +41,7 @@ check-db-url:
 	@test -n "$$DATABASE_URL" || (echo "DATABASE_URL doit etre defini, ex: postgresql://gpe:gpe@localhost:5432/gpe" && exit 1)
 
 db-init: check-db-url
-	psql "$$DATABASE_URL" -f init.sql
+	psql "$$DATABASE_URL" -f db/init.sql
 
 ingest: ingest-gtfs ingest-insee ingest-gpe
 

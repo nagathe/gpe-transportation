@@ -56,14 +56,14 @@ make docker-up
 |------------|-----------------------|
 | Airflow    | http://localhost:8080 |
 | Grafana    | http://localhost:3000 |
-| PostgreSQL | localhost:5432        |
+| PostgreSQL | localhost:5433        |
 
 ---
 
 ## Lancer le pipeline
 
 ```bash
-export DATABASE_URL=postgresql://gpe:gpe@localhost:5432/gpe
+export DATABASE_URL=postgresql://gpe:gpe@localhost:5433/gpe
 
 make db-init       # Crée les schémas et tables
 make ingest        # Télécharge et charge les données brutes
@@ -113,7 +113,9 @@ gpe/
 ├── tests/
 │   ├── unit/         # Tests unitaires (parsing, transformations)
 │   └── integration/  # Tests d'intégration (données en base)
+├── db/               # Fichiers DDL et scripts d'audit
+│   ├── init.sql      # DDL : schémas, tables, extensions PostGIS
+│   └── health_check.sql  # Requêtes d'audit de la base
 ├── docker-compose.yml
-├── init.sql          # DDL : schémas, tables, extensions PostGIS
-└── health_check.sql  # Requêtes d'audit de la base
+└── pytest.ini        # Configuration pytest
 ```
