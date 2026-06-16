@@ -15,20 +15,21 @@ import requests
 from ingestion.fetch_insee import COLONNES_INSEE, download_insee, parse_insee
 
 
-def make_zip_file(df: pd.DataFrame) -> str:
-    """Crée un ZIP temporaire sur disque, retourne le path."""
+def make_zip_file(df: pd.DataFrame) -> Path:
+    """Crée un ZIP temporaire sur disque, retourne le Path."""
     import zipfile
 
     csv_bytes = make_csv_bytes(df)
     tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
     with zipfile.ZipFile(tmp.name, "w") as zf:
         zf.writestr("dossier_complet.csv", csv_bytes)
-    return tmp.name
+    return Path(tmp.name)
 
 
 def make_csv_bytes(df: pd.DataFrame) -> bytes:
     """Crée un CSV en bytes encodé latin-1 avec séparateur ;"""
-    return df.to_csv(sep=";", index=False).encode("latin-1")
+    csv_str: str = df.to_csv(sep=";", index=False)
+    return csv_str.encode("latin-1")
 
 
 def make_zip_bytes(df: pd.DataFrame) -> bytes:

@@ -1,0 +1,43 @@
+# Workflow GitHub Actions pour la CI
+name: CI
+
+# Déclenche le workflow sur les pushes et PRs vers master
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  quality:
+    # Exécute sur un serveur Ubuntu
+    runs-on: ubuntu-latest
+
+    steps:
+      # Récupère le code du repo
+      - uses: actions/checkout@v4
+
+      # Installe Python 3.11
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Installe les dépendances du projet
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Vérifie le formatage du code avec black
+      - name: black
+        run: black --check .
+
+      # Vérifie l'ordre des imports avec isort
+      - name: isort
+        run: isort --check-only .
+
+      # Vérifie la cohérence des types avec mypy
+      - name: mypy
+        run: mypy ingestion tests
+
+      # Lance les tests unitaires
+      - name: pytest (unit)
+        run: pytest tests/unit/ -v

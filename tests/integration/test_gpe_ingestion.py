@@ -37,7 +37,8 @@ def test_table_has_rows() -> None:
     """Vérifie que la table contient des données."""
     with ENGINE.connect() as conn:
         result = conn.execute(text("SELECT COUNT(*) FROM raw.gpe_gares"))
-        assert result.scalar() > 0
+        count = result.scalar()
+        assert count is not None and count > 0
 
 
 def test_expected_columns_present() -> None:
