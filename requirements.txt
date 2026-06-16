@@ -8,6 +8,7 @@ geoalchemy2==0.15.1           # extension PostGIS pour SQLAlchemy
 requests==2.31.0              # téléchargement fichiers / appels API
 pandas==2.2.0                 # manipulation de données tabulaires
 geopandas==0.14.3             # manipulation de données géographiques
+fiona==1.9.4                  # format de lecture/écriture géospatial
 pyproj==3.6.1                 # projections cartographiques
 shapely==2.0.3                # manipulation de géométries (dépendance geopandas)
 
