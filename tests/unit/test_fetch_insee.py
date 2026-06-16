@@ -66,7 +66,10 @@ def test_download_insee_retourne_bytes() -> None:
     mock_response.content = b"fake zip"
     mock_response.raise_for_status = MagicMock()
 
-    with patch("ingestion.fetch_insee.requests.get", return_value=mock_response):
+    with (
+        patch("ingestion.fetch_insee.requests.get", return_value=mock_response),
+        patch("pathlib.Path.write_bytes"),
+    ):
         result = download_insee("http://fake-url.fr")
 
     assert isinstance(result, Path)  # retourne un Path, pas des bytes
