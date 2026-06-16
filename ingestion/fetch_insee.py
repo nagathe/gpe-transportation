@@ -7,6 +7,7 @@ import logging
 import os
 import zipfile
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import requests
@@ -128,7 +129,7 @@ def parse_insee(zip_path: Path) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def _fetch_geo_data(fields: str) -> list[dict]:
+def _fetch_geo_data(fields: str) -> list[dict[str, Any]]:
     """Télécharge les données géographiques depuis GeoAPI pour les départements IDF.
 
     Interroge l'API département par département pour éviter de télécharger
