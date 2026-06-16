@@ -30,7 +30,6 @@ black==24.3.0                 # formatage automatique du code
 flake8==7.0.0                 # linting (détection d'erreurs de style)
 isort==5.13.2                 # tri automatique des imports
 mypy==1.9.0                   # vérification du typage statique
-types-requests==2.31.0.10     # type stubs pour requests
 pre-commit==3.7.0             # hooks git automatiques avant chaque commit
 
 # === Tests ===
