@@ -13,7 +13,9 @@ pyproj==3.6.1                 # projections cartographiques
 shapely==2.0.3                # manipulation de géométries (dépendance geopandas)
 
 # === Transformation ===
-dbt-postgres==1.7.0           # transformations SQL versionnées
+dbt-core==1.8.1               # force version stable (pas alpha)
+dbt-postgres==1.8.1           # transformations SQL versionnées
+protobuf>=4.0,<7.0            # compatibilité avec dbt-postgres
 
 # === Machine Learning ===
 scikit-learn==1.4.2           # clustering k-means + régression
