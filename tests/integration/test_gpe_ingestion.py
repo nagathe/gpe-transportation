@@ -13,7 +13,13 @@ from sqlalchemy import text
 ENGINE = sqlalchemy.create_engine(os.environ["DATABASE_URL"])
 
 # Colonnes produites par fetch_gpe.py (version shapefile)
-EXPECTED_COLUMNS = {"nom_gare", "ligne_gpe", "interconnexion", "source", "geometry"}
+EXPECTED_COLUMNS = {
+    "nom_gare",
+    "ligne_gpe",
+    "interconnexion",
+    "source",
+    "geometry",
+}
 CRITICAL_COLUMNS = ["nom_gare", "ligne_gpe"]
 
 
@@ -80,4 +86,5 @@ def test_lignes_gpe_uniquement() -> None:
             )
         )
         lignes_hors_gpe = [row[0] for row in result]
-        assert lignes_hors_gpe == [], f"Lignes hors GPE trouvées : {lignes_hors_gpe}"
+        msg = f"Lignes hors GPE trouvées : {lignes_hors_gpe}"
+        assert lignes_hors_gpe == [], msg

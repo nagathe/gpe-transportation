@@ -51,7 +51,7 @@ def load_stops(engine, df: pd.DataFrame) -> None:
 
     Args:
         engine: Engine SQLAlchemy connecté à la base cible.
-        df: DataFrame contenant les colonnes stop_id, stop_name, stop_lat, stop_lon.
+        df: DataFrame contenant stop_id, stop_name, stop_lat, stop_lon.
     """
     df.to_sql("stops", engine, schema="raw", if_exists="replace", index=False)
 
@@ -109,9 +109,8 @@ def test_stops_count(stops_in_db):
 def test_stops_columns_present(stops_in_db):
     """Vérifie que toutes les colonnes attendues sont présentes."""
     with stops_in_db.connect() as conn:
-        result = (
-            conn.execute(text("SELECT * FROM raw.stops LIMIT 1")).mappings().first()
-        )
+        query = text("SELECT * FROM raw.stops LIMIT 1")
+        result = conn.execute(query).mappings().first()
 
     expected_columns = {"stop_id", "stop_name", "stop_lat", "stop_lon"}
     assert expected_columns.issubset(set(result.keys()))
@@ -131,9 +130,10 @@ def test_stops_ids_correct(stops_in_db):
 def test_stops_coordinates_are_floats(stops_in_db):
     """Vérifie que les coordonnées sont bien stockées comme des numériques."""
     with stops_in_db.connect() as conn:
-        row = conn.execute(
-            text("SELECT stop_lat, stop_lon FROM raw.stops WHERE stop_id = 'STOP_001'")
-        ).fetchone()
+        query = text(
+            "SELECT stop_lat, stop_lon FROM raw.stops " "WHERE stop_id = 'STOP_001'"
+        )
+        row = conn.execute(query).fetchone()
 
     # On vérifie que ce sont bien des valeurs numériques exploitables
     assert isinstance(float(row[0]), float)
@@ -149,7 +149,8 @@ def test_empty_dataframe_loads_without_error(postgresql):
     engine = get_engine(postgresql)
     create_raw_schema(engine)
 
-    empty_df = pd.DataFrame(columns=["stop_id", "stop_name", "stop_lat", "stop_lon"])
+    columns = ["stop_id", "stop_name", "stop_lat", "stop_lon"]
+    empty_df = pd.DataFrame(columns=columns)
 
     # Ne doit pas lever d'exception
     load_stops(engine, empty_df)

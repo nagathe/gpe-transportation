@@ -67,9 +67,8 @@ def download_gpe(url: str, dest_dir: Path) -> Path:
     response.raise_for_status()
 
     zip_path.write_bytes(response.content)
-    logger.info(
-        "ZIP sauvegardé : %s (%.1f Mo)", zip_path, zip_path.stat().st_size / 1e6
-    )
+    size_mb = zip_path.stat().st_size / 1e6
+    logger.info("ZIP sauvegardé : %s (%.1f Mo)", zip_path, size_mb)
     return zip_path
 
 
@@ -133,7 +132,8 @@ def parse_gpe(extract_dir: Path) -> gpd.GeoDataFrame:
     gdf = gdf[gdf["ligne_gpe"].isin(LIGNES_GPE)].copy()
     logger.info("Filtrage lignes GPE : %d → %d gares", avant, len(gdf))
 
-    return gdf[["nom_gare", "ligne_gpe", "interconnexion", "source", "geometry"]]
+    cols = ["nom_gare", "ligne_gpe", "interconnexion", "source", "geometry"]
+    return gdf[cols]
 
 
 def load_to_postgres(gdf: gpd.GeoDataFrame, engine: Engine) -> None:
@@ -152,11 +152,19 @@ def load_to_postgres(gdf: gpd.GeoDataFrame, engine: Engine) -> None:
         with engine.begin() as conn:
             conn.execute(text("TRUNCATE TABLE raw.gpe_gares"))
         gdf.to_postgis(
-            name="gpe_gares", con=engine, schema="raw", if_exists="append", index=False
+            name="gpe_gares",
+            con=engine,
+            schema="raw",
+            if_exists="append",
+            index=False,
         )
     else:
         gdf.to_postgis(
-            name="gpe_gares", con=engine, schema="raw", if_exists="replace", index=False
+            name="gpe_gares",
+            con=engine,
+            schema="raw",
+            if_exists="replace",
+            index=False,
         )
 
     logger.info("Chargement terminé")

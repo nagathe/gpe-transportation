@@ -34,11 +34,14 @@ COLONNES_INSEE = {
     "C22_PMEN": "nb_menages",
 }
 # Pas de taux de pauvreté dans ce fichier de données
-# on calculera juste taux_chomage = nb_chomeurs / nb_actifs. C'est suffisant pour l'analyse précarité vs mobilité
+# Calcul : taux_chomage = nb_chomeurs / nb_actifs (suffisant pour précarité)
 
 # URLs GeoAPI par département pour éviter de télécharger toute la France
 # Format : /departements/{code}/communes
-GEO_API_DEPT_URL = "https://geo.api.gouv.fr/departements/{dept}/communes?fields=code,{fields}&format=json"
+GEO_API_DEPT_URL = (
+    "https://geo.api.gouv.fr/departements/{dept}/communes"
+    "?fields=code,{fields}&format=json"
+)
 
 
 def download_insee(url: str = INSEE_URL, timeout: int = 120) -> Path:
@@ -56,9 +59,8 @@ def download_insee(url: str = INSEE_URL, timeout: int = 120) -> Path:
         requests.HTTPError: Si la réponse HTTP est une erreur.
     """
     # Le site INSEE bloque les requêtes sans User-Agent navigateur
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-    }
+    user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+    headers = {"User-Agent": user_agent}
     logger.info("Téléchargement INSEE depuis %s", url)
     try:
         response = requests.get(url, headers=headers, timeout=timeout)
@@ -98,7 +100,11 @@ def parse_insee(zip_path: Path) -> pd.DataFrame:
         logger.info("Fichiers dans le ZIP : %s", zf.namelist())
         with zf.open("dossier_complet.csv") as f:
             df = pd.read_csv(
-                f, sep=";", encoding="latin-1", dtype=str, low_memory=False
+                f,
+                sep=";",
+                encoding="latin-1",
+                dtype=str,
+                low_memory=False,
             )
 
     logger.info("Colonnes disponibles : %s", df.columns.tolist())
@@ -114,9 +120,8 @@ def parse_insee(zip_path: Path) -> pd.DataFrame:
 
     for col in COLONNES_INSEE:
         if col != "CODGEO":
-            df[col] = pd.to_numeric(
-                df[col].str.replace(",", "."), errors="coerce"
-            )  # pour les décimales
+            replaced = df[col].str.replace(",", ".")
+            df[col] = pd.to_numeric(replaced, errors="coerce")
 
     # Appliquer le renommage vers des noms lisibles définis dans COLONNES_INSEE
     df = df.rename(columns=COLONNES_INSEE)
@@ -130,10 +135,10 @@ def parse_insee(zip_path: Path) -> pd.DataFrame:
 
 
 def _fetch_geo_data(fields: str) -> list[dict[str, Any]]:
-    """Télécharge les données géographiques depuis GeoAPI pour les départements IDF.
+    """Télécharge données géographiques depuis GeoAPI pour départements IDF.
 
     Interroge l'API département par département pour éviter de télécharger
-    l'ensemble des ~35 000 communes françaises.
+    l'ensemble des communes françaises.
 
     Args:
         fields: Champs GeoAPI à récupérer (ex: "code,centre" ou "code,nom").
@@ -146,9 +151,12 @@ def _fetch_geo_data(fields: str) -> list[dict[str, Any]]:
         url = GEO_API_DEPT_URL.format(dept=dept, fields=fields)
         response = requests.get(url, timeout=60)
         response.raise_for_status()
-        rows.extend(response.json())
+        data = response.json()
+        rows.extend(data)
         logger.info(
-            "Département %s : %d communes récupérées", dept, len(response.json())
+            "Département %s : %d communes récupérées",
+            dept,
+            len(data),
         )
     return rows
 
@@ -165,7 +173,7 @@ def enrich_with_geo(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame enrichi avec colonnes latitude et longitude.
     """
-    logger.info("Téléchargement coordonnées communes depuis GeoAPI (par département)")
+    logger.info("Téléchargement coordonnées depuis GeoAPI (par département)")
 
     raw = _fetch_geo_data(fields="centre")
 
@@ -208,9 +216,21 @@ def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
             # Vide la table sans la supprimer (les vues dbt restent valides)
             with engine.begin() as conn:
                 conn.execute(text(f"TRUNCATE TABLE raw.{table}"))
-            df.to_sql(table, engine, schema="raw", if_exists="append", index=False)
+            df.to_sql(
+                table,
+                engine,
+                schema="raw",
+                if_exists="append",
+                index=False,
+            )
         else:
-            df.to_sql(table, engine, schema="raw", if_exists="replace", index=False)
+            df.to_sql(
+                table,
+                engine,
+                schema="raw",
+                if_exists="replace",
+                index=False,
+            )
 
         logger.info("Chargement terminé pour raw.%s", table)
     except Exception as e:
@@ -230,7 +250,7 @@ def fetch_commune_names(engine: Engine) -> None:
     Raises:
         requests.HTTPError: Si l'appel API échoue.
     """
-    logger.info("Téléchargement noms de communes depuis GeoAPI (par département)")
+    logger.info("Téléchargement noms communes depuis GeoAPI (par département)")
 
     raw = _fetch_geo_data(fields="nom")
 
@@ -238,17 +258,18 @@ def fetch_commune_names(engine: Engine) -> None:
         {"code_commune": c["code"], "nom_commune": c["nom"]} for c in raw if "nom" in c
     ]
 
-    # Paris : GeoAPI retourne 75056 mais INSEE utilise les arrondissements 75101-75120
-    paris_arrondissements = [
+    # Paris : GeoAPI retourne 75056 mais INSEE utilise arrondissements
+    # 75101-75120
+    paris_rows = [
         {
             "code_commune": f"751{i:02d}",
-            "nom_commune": f"Paris {i}{'er' if i == 1 else 'e'} Arrondissement",
+            "nom_commune": (f"Paris {i}{'er' if i == 1 else 'e'} Arrondissement"),
         }
         for i in range(1, 21)
     ]
-    rows.extend(paris_arrondissements)
+    rows.extend(paris_rows)
 
-    # Saint-Ouen : renommée Saint-Ouen-sur-Seine en 2019, INSEE conserve l'ancien code 93059
+    # Saint-Ouen : renommée Saint-Ouen-sur-Seine en 2019
     rows.append({"code_commune": "93059", "nom_commune": "Saint-Ouen-sur-Seine"})
 
     df = pd.DataFrame(rows)

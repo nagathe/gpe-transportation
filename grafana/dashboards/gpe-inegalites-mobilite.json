@@ -1,0 +1,398 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": ["value", "percent"],
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "pieType": "pie",
+        "displayLabels": ["name", "percent"],
+        "reduceOptions": {
+          "values": true,
+          "fields": "",
+          "calcs": []
+        }
+      },
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    CASE\n        WHEN arrets_pour_10000_hab < 5 THEN 'Très mal desservie'\n        WHEN arrets_pour_10000_hab < 10 THEN 'Mal desservie'\n        WHEN arrets_pour_10000_hab < 20 THEN 'Moyennement desservie'\n        ELSE 'Bien desservie'\n    END as name,\n    COUNT(*) as value\nFROM mart.accessibilite_par_commune\nGROUP BY 1\nORDER BY 2 DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Distribution des communes par niveau de desserte",
+      "type": "piechart"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axis": {
+              "alignValue": "left"
+            },
+            "displayMode": "auto",
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "barRadius": 0,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "orientation": "auto",
+        "showTooltip": "auto",
+        "stacking": "none",
+        "text": {},
+        "tooltip": {
+          "mode": "single"
+        },
+        "xTickLabel": "",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    CASE\n        WHEN revenu_median < 22000 THEN 'Q1 (pauvre)'\n        WHEN revenu_median < 27000 THEN 'Q2'\n        WHEN revenu_median < 33000 THEN 'Q3'\n        ELSE 'Q4 (riche)'\n    END as quartile,\n    ROUND(AVG(arrets_pour_10000_hab)::numeric, 2) as avg_arrets\nFROM mart.accessibilite_par_commune\nGROUP BY quartile\nORDER BY quartile;",
+          "refId": "A"
+        }
+      ],
+      "title": "Accessibilité actuelle par tranche de revenu",
+      "type": "barchart"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axis": {
+              "alignValue": "left"
+            },
+            "displayMode": "auto",
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "barRadius": 0,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "orientation": "auto",
+        "showTooltip": "auto",
+        "stacking": "none",
+        "text": {},
+        "tooltip": {
+          "mode": "single"
+        },
+        "xTickLabel": "",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    CASE\n        WHEN a.revenu_median < 22000 THEN 'Q1 (pauvre)'\n        WHEN a.revenu_median < 27000 THEN 'Q2'\n        WHEN a.revenu_median < 33000 THEN 'Q3'\n        ELSE 'Q4 (riche)'\n    END as quartile,\n    ROUND(100.0 * SUM(CASE WHEN g.nb_gares_gpe_futures > 0 THEN 1 ELSE 0 END) / COUNT(*)::numeric, 2) as pct_aidees\nFROM mart.gain_mobilite g\nJOIN mart.accessibilite_par_commune a USING (code_commune)\nGROUP BY quartile\nORDER BY quartile;",
+          "refId": "A"
+        }
+      ],
+      "title": "% de communes aidées par le GPE (par tranche de revenu)",
+      "type": "barchart"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "green",
+                "value": 40
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 16
+      },
+      "id": 4,
+      "options": {
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {}
+      },
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    ROUND(100.0 * SUM(CASE WHEN g.nb_gares_gpe_futures > 0 THEN 1 ELSE 0 END) / COUNT(*)::numeric, 2) as value\nFROM mart.gain_mobilite g\nJOIN mart.accessibilite_par_commune a USING (code_commune)\nWHERE a.revenu_median < 22000;",
+          "refId": "A"
+        }
+      ],
+      "title": "% Pauvres (Q1) aidés",
+      "type": "stat"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "green",
+                "value": 40
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 16
+      },
+      "id": 5,
+      "options": {
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {}
+      },
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    ROUND(100.0 * SUM(CASE WHEN g.nb_gares_gpe_futures > 0 THEN 1 ELSE 0 END) / COUNT(*)::numeric, 2) as value\nFROM mart.gain_mobilite g\nJOIN mart.accessibilite_par_commune a USING (code_commune)\nWHERE a.revenu_median >= 33000;",
+          "refId": "A"
+        }
+      ],
+      "title": "% Riches (Q4) aidés",
+      "type": "stat"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 6,
+      "options": {
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "text": {}
+      },
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH pauvres_aidees AS (\n    SELECT COUNT(*) as nb,\n           SUM(CASE WHEN g.nb_gares_gpe_futures > 0 THEN 1 ELSE 0 END) as avec_gpe\n    FROM mart.gain_mobilite g\n    JOIN mart.accessibilite_par_commune a USING (code_commune)\n    WHERE a.revenu_median < 22000\n),\nriches_aides AS (\n    SELECT COUNT(*) as nb,\n           SUM(CASE WHEN g.nb_gares_gpe_futures > 0 THEN 1 ELSE 0 END) as avec_gpe\n    FROM mart.gain_mobilite g\n    JOIN mart.accessibilite_par_commune a USING (code_commune)\n    WHERE a.revenu_median >= 33000\n)\nSELECT \n    ROUND(100.0 * (p.avec_gpe / p.nb::numeric - r.avec_gpe / r.nb::numeric), 2) as value\nFROM pauvres_aidees p, riches_aides r;",
+          "refId": "A"
+        }
+      ],
+      "title": "Conclusion",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 27,
+  "style": "dark",
+  "tags": [
+    "gpe",
+    "mobilite",
+    "inegalites"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "GPE : Les inégalités de mobilité vont-elles diminuer ?",
+  "uid": "gpe-inegalites",
+  "version": 6
+}

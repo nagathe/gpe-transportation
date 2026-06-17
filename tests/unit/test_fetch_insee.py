@@ -3,7 +3,6 @@
 Tests unitaires pour ingestion/fetch_insee.py
 """
 
-import os
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -67,7 +66,10 @@ def test_download_insee_retourne_bytes() -> None:
     mock_response.raise_for_status = MagicMock()
 
     with (
-        patch("ingestion.fetch_insee.requests.get", return_value=mock_response),
+        patch(
+            "ingestion.fetch_insee.requests.get",
+            return_value=mock_response,
+        ),
         patch("pathlib.Path.write_bytes"),
     ):
         result = download_insee("http://fake-url.fr")
@@ -80,7 +82,10 @@ def test_download_insee_leve_erreur_si_http_400() -> None:
     mock_response = MagicMock()
     mock_response.raise_for_status.side_effect = requests.HTTPError("403")
 
-    with patch("ingestion.fetch_insee.requests.get", return_value=mock_response):
+    with patch(
+        "ingestion.fetch_insee.requests.get",
+        return_value=mock_response,
+    ):
         with pytest.raises(requests.HTTPError):
             download_insee("http://fake-url.fr")
 

@@ -93,7 +93,7 @@ def test_extract_gtfs_zip_invalide_leve_erreur(tmp_path: Path) -> None:
 
 
 def test_load_to_postgres_appelle_to_sql(tmp_path: Path) -> None:
-    """Vérifie que load_to_postgres appelle bien to_sql pour chaque fichier présent."""
+    """load_to_postgres appelle to_sql pour chaque fichier présent."""
     csv_content = "stop_id,stop_name,stop_lat,stop_lon\n0001,Test,48.85,2.35\n"
     (tmp_path / "stops.txt").write_text(csv_content)
 

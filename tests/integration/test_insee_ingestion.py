@@ -77,20 +77,27 @@ class TestINSEEIngestion:
             assert (
                 columns["code_commune"] == "text"
             ), f"code_commune doit être text, trouvé {columns['code_commune']}"
-            for col in ["population", "revenu_median", "nb_chomeurs", "nb_actifs"]:
-                assert (
-                    columns[col] == "double precision"
-                ), f"{col} doit être double precision, trouvé {columns[col]}"
+            cols = [
+                "population",
+                "revenu_median",
+                "nb_chomeurs",
+                "nb_actifs",
+            ]
+            for col in cols:
+                expected_type = "double precision"
+                actual_type = columns[col]
+                msg = f"{col} doit être {expected_type}, trouvé {actual_type}"
+                assert actual_type == expected_type, msg
 
     def test_code_commune_not_null(self):
         """Vérifie que code_commune (clé primaire) n'a pas de NULLs."""
         with ENGINE.connect() as conn:
-            null_count = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM raw.insee_communes WHERE code_commune IS NULL"
-                )
-            ).scalar()
-            assert null_count == 0, f"NULLs trouvés dans code_commune : {null_count}"
+            query = (
+                "SELECT COUNT(*) FROM raw.insee_communes " "WHERE code_commune IS NULL"
+            )
+            null_count = conn.execute(text(query)).scalar()
+            msg = f"NULLs trouvés dans code_commune : {null_count}"
+            assert null_count == 0, msg
 
     def test_data_not_empty(self):
         """Vérifie que la table n'est pas vide."""
@@ -111,9 +118,11 @@ class TestINSEEIngestion:
                 """
                 )
             ).fetchone()
-            assert (
-                total == unique
-            ), f"Doublons détectés : {total} rows mais {unique} code_commune uniques"
+            msg = (
+                f"Doublons détectés : {total} rows mais "
+                f"{unique} code_commune uniques"
+            )
+            assert total == unique, msg
 
     def test_revenu_median_coverage(self):
         """Vérifie que revenu_median a au moins 80% de couverture."""
@@ -124,14 +133,19 @@ class TestINSEEIngestion:
                     SELECT
                         COUNT(*) as total,
                         COUNT(revenu_median) as with_val,
-                        ROUND(100.0 * COUNT(revenu_median) / COUNT(*), 2) as pct
+                        ROUND(
+                            100.0 * COUNT(revenu_median) / COUNT(*),
+                            2
+                        ) as pct
                     FROM raw.insee_communes
                 """
                 )
             ).fetchone()
-            assert (
-                coverage_pct >= 80
-            ), f"revenu_median couverture insuffisante : {coverage_pct}% ({with_val}/{total})"
+            msg = (
+                f"revenu_median couverture insuffisante : "
+                f"{coverage_pct}% ({with_val}/{total})"
+            )
+            assert coverage_pct >= 80, msg
 
     def test_taux_chomage_coverage(self):
         """Vérifie que taux_chomage a au moins 35% de couverture."""
@@ -142,14 +156,19 @@ class TestINSEEIngestion:
                     SELECT
                         COUNT(*) as total,
                         COUNT(taux_chomage) as with_val,
-                        ROUND(100.0 * COUNT(taux_chomage) / COUNT(*), 2) as pct
+                        ROUND(
+                            100.0 * COUNT(taux_chomage) / COUNT(*),
+                            2
+                        ) as pct
                     FROM raw.insee_communes
                 """
                 )
             ).fetchone()
-            assert (
-                coverage_pct >= 35
-            ), f"taux_chomage couverture insuffisante : {coverage_pct}% ({with_val}/{total})"
+            msg = (
+                f"taux_chomage couverture insuffisante : "
+                f"{coverage_pct}% ({with_val}/{total})"
+            )
+            assert coverage_pct >= 35, msg
 
     def test_revenu_median_reasonable_values(self):
         """Vérifie que les revenus médians sont dans une plage raisonnable."""
@@ -168,8 +187,10 @@ class TestINSEEIngestion:
                 pytest.skip("revenu_median : aucune donnée non-NULL")
 
             min_val, max_val = result
-            assert min_val >= 10000, f"Revenu médian anormalement bas : {min_val}€"
-            assert max_val <= 100000, f"Revenu médian anormalement haut : {max_val}€"
+            msg_min = f"Revenu médian anormalement bas : {min_val}€"
+            assert min_val >= 10000, msg_min
+            msg_max = f"Revenu médian anormalement haut : {max_val}€"
+            assert max_val <= 100000, msg_max
 
     def test_taux_chomage_reasonable_values(self):
         """Vérifie que les taux de chômage sont entre 0 et 1 (ratio, pas %)."""
@@ -188,8 +209,10 @@ class TestINSEEIngestion:
                 pytest.skip("taux_chomage : aucune donnée non-NULL")
 
             min_val, max_val = result
-            assert min_val >= 0, f"Taux de chômage négatif : {min_val}"
-            assert max_val <= 1, f"Taux de chômage > 1 (ratio attendu) : {max_val}"
+            msg_min = f"Taux de chômage négatif : {min_val}"
+            assert min_val >= 0, msg_min
+            msg_max = f"Taux de chômage > 1 (ratio attendu) : {max_val}"
+            assert max_val <= 1, msg_max
 
     def test_coordonnees_idf_plausibles(self):
         """Vérifie que les coordonnées sont bien en Île-de-France."""

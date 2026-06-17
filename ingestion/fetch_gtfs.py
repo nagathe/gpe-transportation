@@ -1,6 +1,6 @@
-"""
-Ingestion du fichier GTFS Île-de-France.
-Télécharge le ZIP, extrait les fichiers et charge en base PostgreSQL (schema raw).
+"""Ingestion du fichier GTFS Île-de-France.
+
+Télécharge le ZIP, extrait les fichiers et charge en base PostgreSQL.
 """
 
 import logging
@@ -51,9 +51,8 @@ def download_gtfs(url: str, dest_dir: Path) -> Path:
         raise
 
     zip_path.write_bytes(response.content)
-    logger.info(
-        "Fichier sauvegardé : %s (%.1f MB)", zip_path, zip_path.stat().st_size / 1e6
-    )
+    size_mb = zip_path.stat().st_size / 1e6
+    logger.info("Fichier sauvegardé : %s (%.1f MB)", zip_path, size_mb)
     return zip_path
 
 
@@ -96,10 +95,10 @@ def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
         try:
             # Supprime les vues dépendantes avant de recréer la table raw
             with engine.begin() as conn:
-                conn.execute(
-                    text(f"DROP VIEW IF EXISTS staging.stg_{table_name} CASCADE;")
-                )
-                logger.info("Vues dépendantes nettoyées pour raw.%s", table_name)
+                query = f"DROP VIEW IF EXISTS staging.stg_{table_name} CASCADE;"
+                conn.execute(text(query))
+                msg = f"Vues dépendantes nettoyées pour raw.{table_name}"
+                logger.info(msg)
 
             # Charge les données
             df = pd.read_csv(filepath, dtype=str, low_memory=False)

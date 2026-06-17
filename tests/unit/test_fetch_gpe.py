@@ -15,7 +15,7 @@ import pytest
 import requests
 from shapely.geometry import Point
 
-from ingestion.fetch_gpe import LIGNES_GPE, download_gpe, extract_gpe, parse_gpe
+from ingestion.fetch_gpe import download_gpe, extract_gpe, parse_gpe
 
 # ─────────────────────────────────────────────
 # Helpers
@@ -66,7 +66,7 @@ def shp_valide(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def shp_avec_hors_gpe(tmp_path: Path) -> Path:
-    """Shapefile avec 1 gare GPE et 1 gare hors GPE — la hors GPE doit être filtrée."""
+    """Shapefile avec 1 gare GPE et 1 hors GPE — hors GPE filtrée."""
     return make_shapefile(
         tmp_path,
         [
@@ -117,7 +117,7 @@ class TestParseGpe:
         assert isinstance(result, gpd.GeoDataFrame)
 
     def test_nombre_lignes(self, shp_valide: Path) -> None:
-        """On doit avoir autant de lignes que de gares GPE dans le shapefile."""
+        """Doit avoir autant de lignes que de gares GPE."""
         result = parse_gpe(shp_valide)
         assert len(result) == 2
 
@@ -134,7 +134,7 @@ class TestParseGpe:
         assert colonnes_attendues.issubset(set(result.columns))
 
     def test_filtre_hors_gpe(self, shp_avec_hors_gpe: Path) -> None:
-        """Les gares dont la ligne n'est pas dans LIGNES_GPE doivent être filtrées."""
+        """Gares hors GPE doivent être filtrées."""
         result = parse_gpe(shp_avec_hors_gpe)
         assert len(result) == 1
         assert result.iloc[0]["nom_gare"] == "Champigny Centre"
@@ -147,7 +147,7 @@ class TestParseGpe:
         assert "Noisy-Champs" in noms
 
     def test_crs_est_wgs84(self, shp_valide: Path) -> None:
-        """Le GeoDataFrame doit être en WGS84 (EPSG:4326) après reprojection."""
+        """GeoDataFrame doit être en WGS84 (EPSG:4326)."""
         result = parse_gpe(shp_valide)
         assert result.crs.to_epsg() == 4326
 
@@ -176,7 +176,10 @@ class TestDownloadGpe:
         mock_response.content = b"fake zip"
         mock_response.raise_for_status.return_value = None
 
-        with patch("ingestion.fetch_gpe.requests.get", return_value=mock_response):
+        with patch(
+            "ingestion.fetch_gpe.requests.get",
+            return_value=mock_response,
+        ):
             result = download_gpe("http://fake-url.com/gpe.zip", tmp_path)
 
         assert isinstance(result, Path)
@@ -188,7 +191,10 @@ class TestDownloadGpe:
         mock_response.content = b"fake zip content"
         mock_response.raise_for_status.return_value = None
 
-        with patch("ingestion.fetch_gpe.requests.get", return_value=mock_response):
+        with patch(
+            "ingestion.fetch_gpe.requests.get",
+            return_value=mock_response,
+        ):
             result = download_gpe("http://fake-url.com/gpe.zip", tmp_path)
 
         assert result.read_bytes() == b"fake zip content"
@@ -209,7 +215,10 @@ class TestDownloadGpe:
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = requests.HTTPError("404")
 
-        with patch("ingestion.fetch_gpe.requests.get", return_value=mock_response):
+        with patch(
+            "ingestion.fetch_gpe.requests.get",
+            return_value=mock_response,
+        ):
             with pytest.raises(requests.HTTPError):
                 download_gpe("http://fake-url.com/gpe.zip", tmp_path)
 
@@ -231,7 +240,7 @@ class TestExtractGpe:
         assert result.exists()
 
     def test_fichiers_extraits(self, tmp_path: Path) -> None:
-        """Les fichiers du ZIP doivent être présents dans le dossier extrait."""
+        """Fichiers du ZIP doivent être présents."""
         zip_path = tmp_path / "test.zip"
         with zipfile.ZipFile(zip_path, "w") as z:
             z.writestr("gpe.shp", b"fake shp")
