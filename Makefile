@@ -1,4 +1,9 @@
 SHELL := /bin/bash
+
+# Charge .env (POSTGRES_*, etc.) et l'exporte vers les commandes (dbt, psql)
+-include .env
+export
+
 PYTHON ?= python
 DBT_DIR := dbt
 

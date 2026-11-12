@@ -19,7 +19,7 @@ fetch_gpe.py             →  stg_gpe_gares              →  precarite_vs_mobil
 
 **Sources de données :**
 - GTFS IDFM — réseau de transport actuel (arrêts, lignes)
-- INSEE — revenus, chômage, population par commune IDF
+- INSEE — dossier complet (Parquet, millésime 2023) : population, niveau de vie médian, chômage par commune IDF
 - Shapefile SdGP — futures gares GPE (lignes 15/16/17/18)
 
 
@@ -163,7 +163,7 @@ Ou tout en une commande :
 make all
 ```
 
-**⚠️ Note sur l'ingestion :** Les téléchargements externes (INSEE, GTFS, GPE) prennent **10-15 minutes** selon la connexion. Ne pas interrompre.
+**⚠️ Note sur l'ingestion :** Les téléchargements externes (INSEE, GTFS, GPE) prennent **environ 10 à 12 minutes** (mesuré : GTFS ≈ 8 min, INSEE ≈ 2 min dont ≈ 100 s de téléchargement), selon la connexion. Le fichier INSEE (Parquet, ≈ 320 Mo) est conservé dans `data/raw/insee/` et réutilisé aux exécutions suivantes. Ne pas interrompre.
 
 ---
 

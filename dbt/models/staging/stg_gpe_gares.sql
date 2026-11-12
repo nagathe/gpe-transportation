@@ -21,7 +21,7 @@
 -- =============================================================================
 
 with source as (
-    select * from raw.gpe_gares
+    select * from {{ source('raw', 'gpe_gares') }}
 ),
 
 cleaned as (
