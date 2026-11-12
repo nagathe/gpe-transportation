@@ -5,11 +5,11 @@ Télécharge et charge les indicateurs socio-économiques en base PostgreSQL.
 
 import logging
 import os
-import zipfile
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pyarrow.parquet as pq
 import requests
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
@@ -19,20 +19,39 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Depuis le 22/07/2026, l'INSEE publie le dossier complet en CSV (7 Go
+# décompressé) et en Parquet, format recommandé : on ne lit que les colonnes utiles.
 INSEE_URL = (
-    "https://www.insee.fr/fr/statistiques/fichier/5359146/" "dossier_complet.zip"
+    "https://www.insee.fr/fr/statistiques/fichier/5359146/dossier_complet.parquet"
 )
+INSEE_PATH = Path("data/raw/insee/dossier_complet.parquet")
+CHUNK_SIZE = 1024 * 1024  # 1 Mo
 
 DEPTS_IDF = {"75", "77", "78", "91", "92", "93", "94", "95"}
 
-COLONNES_INSEE = {
-    "CODGEO": "code_commune",
-    "P22_POP": "population",
-    "MED_SL23": "revenu_median",
-    "P22_CHOM1564": "nb_chomeurs",
-    "P22_ACT1564": "nb_actifs",
-    "C22_PMEN": "nb_menages",
+# Niveaux géographiques retenus : communes (COM) et arrondissements (ARM)
+GEO_OBJECTS = ["COM", "ARM"]
+
+# Le fichier INSEE est en format long : une ligne = une mesure d'un territoire
+# pour une année. On retient (table ID_TAB, mesure TAB_MEASURE) -> colonne cible.
+MESURES_INSEE = {
+    ("POP_T1", "POP"): "population",
+    ("REV_T1", "MED_SL"): "revenu_median",  # niveau de vie médian (Filosofi)
+    ("EMP_T1", "POP_EMPSTA_ENQ_2_AGE_Y15T64"): "nb_chomeurs",  # chômeurs 15-64 ans
+    ("EMP_T1", "POP_EMPSTA_ENQ_1T2_AGE_Y15T64"): "nb_actifs",  # actifs 15-64 ans
+    # Résidences principales = nombre de ménages
+    ("FAM_T1", "DWELLINGS_OCS_DW_MAIN"): "nb_menages",
 }
+COLONNES_SORTIE = list(MESURES_INSEE.values())
+COLONNES_LECTURE = [
+    "GEO_REF",
+    "GEO",
+    "TIME_PERIOD",
+    "ID_TAB",
+    "TAB_MEASURE",
+    "OBS_VALUE",
+    "UNIT_MULT",
+]
 # Pas de taux de pauvreté dans ce fichier de données
 # Calcul : taux_chomage = nb_chomeurs / nb_actifs (suffisant pour précarité)
 
@@ -44,91 +63,125 @@ GEO_API_DEPT_URL = (
 )
 
 
-def download_insee(url: str = INSEE_URL, timeout: int = 120) -> Path:
+def download_insee(
+    url: str = INSEE_URL, dest: Path = INSEE_PATH, timeout: int = 120
+) -> Path:
     """
-    Télécharge le fichier INSEE depuis l'URL donnée.
+    Télécharge le fichier INSEE (Parquet) sur disque, par morceaux.
+
+    Si le fichier est déjà présent, il est réutilisé : une panne du site
+    n'empêche pas de relancer le pipeline. Le téléchargement passe par un
+    fichier temporaire pour ne jamais laisser un fichier incomplet.
 
     Args:
-        url: URL du fichier ZIP INSEE.
+        url: URL du fichier Parquet INSEE.
+        dest: Chemin de destination du fichier.
         timeout: Timeout HTTP en secondes.
 
     Returns:
-        Path vers le fichier ZIP téléchargé.
+        Path vers le fichier téléchargé.
 
     Raises:
         requests.HTTPError: Si la réponse HTTP est une erreur.
     """
-    # Le site INSEE bloque les requêtes sans User-Agent navigateur
-    user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-    headers = {"User-Agent": user_agent}
+    if dest.exists():
+        logger.info("Fichier déjà présent, téléchargement ignoré : %s", dest)
+        return dest
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dest.with_suffix(dest.suffix + ".part")
     logger.info("Téléchargement INSEE depuis %s", url)
     try:
-        response = requests.get(url, headers=headers, timeout=timeout)
-        response.raise_for_status()
+        with requests.get(url, stream=True, timeout=timeout) as response:
+            response.raise_for_status()
+            with tmp_path.open("wb") as f:
+                for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+                    f.write(chunk)
     except requests.HTTPError as e:
         logger.error("Échec du téléchargement INSEE : %s", e)
+        tmp_path.unlink(missing_ok=True)
         raise
     except requests.ConnectionError as e:
         logger.error("Erreur réseau INSEE : %s", e)
+        tmp_path.unlink(missing_ok=True)
         raise
 
-    logger.info("Téléchargement terminé (%d bytes)", len(response.content))
-    # return response.content
-    zip_path = Path("data/raw/insee/dossier_complet.zip")
-    zip_path.write_bytes(response.content)
-    return zip_path
+    tmp_path.rename(dest)
+    logger.info(
+        "Téléchargement terminé : %s (%.1f Mo)", dest, dest.stat().st_size / 1e6
+    )
+    return dest
 
 
-def parse_insee(zip_path: Path) -> pd.DataFrame:
-    """Parse et nettoie les données INSEE communes.
+def parse_insee(parquet_path: Path) -> pd.DataFrame:
+    """Lit le Parquet INSEE (format long) et retourne une ligne par commune.
 
-    Renomme les colonnes INSEE vers des noms lisibles (cf. COLONNES_INSEE),
-    calcule le taux de chômage et filtre sur l'Île-de-France.
+    Ne lit que les lignes utiles (communes et arrondissements, tables et
+    mesures de MESURES_INSEE), garde le dernier millésime disponible de chaque
+    mesure, puis pivote pour obtenir une colonne par indicateur.
 
     Args:
-        zip_files: Contenu brut du fichier ZIP INSEE.
+        parquet_path: Chemin du fichier Parquet INSEE.
 
     Returns:
-        DataFrame nettoyé filtré sur l'Île-de-France, colonnes renommées,
-        avec colonne taux_chomage calculée.
+        DataFrame filtré sur l'Île-de-France avec les colonnes code_commune,
+        population, revenu_median, nb_chomeurs, nb_actifs, nb_menages et
+        taux_chomage (calculé).
 
     Raises:
-        KeyError: Si une colonne attendue est absente du fichier source.
+        KeyError: Si une colonne ou une mesure attendue est absente du fichier.
     """
-    # Le fichier téléchargé est un ZIP contenant dossier_complet.csv
-    with zipfile.ZipFile(zip_path) as zf:
-        logger.info("Fichiers dans le ZIP : %s", zf.namelist())
-        with zf.open("dossier_complet.csv") as f:
-            df = pd.read_csv(
-                f,
-                sep=";",
-                encoding="latin-1",
-                dtype=str,
-                low_memory=False,
-            )
+    # pyarrow n'est pas typé : appels ignorés ligne par ligne pour mypy strict
+    colonnes_fichier = pq.read_schema(parquet_path).names  # type: ignore[no-untyped-call]
+    logger.info("Colonnes du fichier : %s", colonnes_fichier)
 
-    logger.info("Colonnes disponibles : %s", df.columns.tolist())
-
-    manquantes = [c for c in COLONNES_INSEE if c not in df.columns]
+    attendues = COLONNES_LECTURE + ["GEO_OBJECT"]
+    manquantes = [c for c in attendues if c not in colonnes_fichier]
     if manquantes:
         raise KeyError(f"Colonnes manquantes : {manquantes}")
 
-    df = df[list(COLONNES_INSEE.keys())].dropna(subset=["CODGEO"])
+    tables = sorted({table for table, _ in MESURES_INSEE})
+    mesures = sorted({mesure for _, mesure in MESURES_INSEE})
+    filtres = [
+        ("GEO_OBJECT", "in", GEO_OBJECTS),
+        ("ID_TAB", "in", tables),
+        ("TAB_MEASURE", "in", mesures),
+    ]
+    table = pq.read_table(  # type: ignore[no-untyped-call]
+        parquet_path, columns=COLONNES_LECTURE, filters=filtres
+    )
+    df = table.to_pandas()
 
-    # Filtrer sur l'Île-de-France (2 premiers caractères du code commune)
-    df = df[df["CODGEO"].str[:2].isin(DEPTS_IDF)]
+    # Île-de-France : 2 premiers caractères du code géographique
+    df = df[df["GEO"].str[:2].isin(DEPTS_IDF)].copy()
 
-    for col in COLONNES_INSEE:
-        if col != "CODGEO":
-            replaced = df[col].str.replace(",", ".")
-            df[col] = pd.to_numeric(replaced, errors="coerce")
+    # Associe chaque (table, mesure) à sa colonne cible ; écarte les autres paires
+    cles = list(zip(df["ID_TAB"], df["TAB_MEASURE"]))
+    df["colonne"] = [MESURES_INSEE.get(cle) for cle in cles]
+    df = df.dropna(subset=["colonne"])
 
-    # Appliquer le renommage vers des noms lisibles définis dans COLONNES_INSEE
-    df = df.rename(columns=COLONNES_INSEE)
+    absentes = [c for c in COLONNES_SORTIE if c not in set(df["colonne"])]
+    if absentes:
+        raise KeyError(f"Mesures manquantes : {absentes}")
+
+    # Valeur = OBS_VALUE x 10^UNIT_MULT (UNIT_MULT absent = 0)
+    multiplicateur = 10 ** pd.to_numeric(df["UNIT_MULT"], errors="coerce").fillna(0)
+    df["valeur"] = pd.to_numeric(df["OBS_VALUE"], errors="coerce") * multiplicateur
+
+    # Dernier millésime disponible, puis dernier millésime géographique
+    df = df.sort_values(["TIME_PERIOD", "GEO_REF"])
+    df = df.drop_duplicates(["GEO", "colonne"], keep="last")
+    annees = df.groupby("colonne")["TIME_PERIOD"].agg(["min", "max"])
+    logger.info("Millésimes utilisés par indicateur :\n%s", annees)
+
+    df = df.pivot(index="GEO", columns="colonne", values="valeur")
+    df.columns.name = None
+    df.index.name = "code_commune"
+    df = df.reindex(columns=COLONNES_SORTIE).reset_index()
 
     # Calcul du taux de chômage : nb_chomeurs / nb_actifs
     # Résultat entre 0 et 1, NaN si nb_actifs est nul ou manquant
-    df["taux_chomage"] = df["nb_chomeurs"] / df["nb_actifs"]
+    df["taux_chomage"] = df["nb_chomeurs"] / df["nb_actifs"].where(df["nb_actifs"] > 0)
 
     logger.info("%d communes IDF valides après nettoyage", len(df))
     return df.reset_index(drop=True)
