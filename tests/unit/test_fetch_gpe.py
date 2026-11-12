@@ -15,7 +15,7 @@ import pytest
 import requests
 from shapely.geometry import Point
 
-from ingestion.fetch_gpe import download_gpe, extract_gpe, parse_gpe
+from ingestion.fetch_gpe import download_gpe, est_gare_gpe, extract_gpe, parse_gpe
 
 # ─────────────────────────────────────────────
 # Helpers
@@ -89,6 +89,44 @@ def shp_avec_hors_gpe(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def shp_interconnexions(tmp_path: Path) -> Path:
+    """Gares d'interconnexion : la colonne LIGNE combine plusieurs lignes."""
+    return make_shapefile(
+        tmp_path,
+        [
+            {
+                "LIBELLE": "Le Bourget RER",
+                "LIGNE": "L16/L17",  # deux lignes GPE
+                "CONNEX": "Oui",
+                "producteur": "SGP",
+                "geometry": Point(2.4237, 48.9300),
+            },
+            {
+                "LIBELLE": "Aéroport d'Orly",
+                "LIGNE": "L14/L18",  # une ligne GPE sur deux
+                "CONNEX": "Oui",
+                "producteur": "SGP",
+                "geometry": Point(2.3690, 48.7260),
+            },
+            {
+                "LIBELLE": "Gare ligne 14 seule",
+                "LIGNE": "L14",  # aucune ligne GPE
+                "CONNEX": "Non",
+                "producteur": "RATP",
+                "geometry": Point(2.3300, 48.8800),
+            },
+            {
+                "LIBELLE": "Champigny Centre",
+                "LIGNE": "L15",
+                "CONNEX": "Non",
+                "producteur": "SGP",
+                "geometry": Point(2.5149, 48.8167),
+            },
+        ],
+    )
+
+
+@pytest.fixture
 def shp_vide(tmp_path: Path) -> Path:
     """Shapefile sans aucune gare GPE après filtrage."""
     return make_shapefile(
@@ -139,6 +177,26 @@ class TestParseGpe:
         assert len(result) == 1
         assert result.iloc[0]["nom_gare"] == "Champigny Centre"
 
+    def test_garde_les_gares_a_lignes_multiples(
+        self, shp_interconnexions: Path
+    ) -> None:
+        """Une gare L16/L17 ou L14/L18 est une gare GPE : elle doit être gardée."""
+        noms = set(parse_gpe(shp_interconnexions)["nom_gare"])
+        assert noms == {"Le Bourget RER", "Aéroport d'Orly", "Champigny Centre"}
+
+    def test_ecarte_la_ligne_14_seule(self, shp_interconnexions: Path) -> None:
+        """Une gare de la ligne 14 seule n'appartient pas aux lignes 15 à 18."""
+        noms = set(parse_gpe(shp_interconnexions)["nom_gare"])
+        assert "Gare ligne 14 seule" not in noms
+
+    def test_conserve_la_valeur_d_origine_de_la_ligne(
+        self, shp_interconnexions: Path
+    ) -> None:
+        """La colonne ligne_gpe garde la combinaison source (ex. 'L16/L17')."""
+        result = parse_gpe(shp_interconnexions)
+        bourget = result[result["nom_gare"] == "Le Bourget RER"].iloc[0]
+        assert bourget["ligne_gpe"] == "L16/L17"
+
     def test_valeurs_nom_gare(self, shp_valide: Path) -> None:
         """Les noms de gares doivent correspondre aux données source."""
         result = parse_gpe(shp_valide)
@@ -162,6 +220,32 @@ class TestParseGpe:
         """Si aucune gare ne passe le filtre GPE, on doit avoir 0 lignes."""
         result = parse_gpe(shp_vide)
         assert len(result) == 0
+
+
+# ─────────────────────────────────────────────
+# Tests est_gare_gpe
+# ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("ligne", "attendu"),
+    [
+        ("L15", True),
+        ("L18", True),
+        ("L16/L17", True),  # interconnexion entre deux lignes GPE
+        ("L14/L18", True),  # une ligne GPE suffit
+        ("L15/L14", True),
+        ("L14/L15/L16/L17", True),
+        (" L16 / L17 ", True),  # espaces tolérés
+        ("L14", False),  # ligne 14 seule : hors périmètre
+        ("RER_B", False),
+        ("L150", False),  # pas de correspondance partielle
+        ("", False),
+        (None, False),  # valeur manquante
+    ],
+)
+def test_est_gare_gpe(ligne: object, attendu: bool) -> None:
+    assert est_gare_gpe(ligne) is attendu
 
 
 # ─────────────────────────────────────────────

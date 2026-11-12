@@ -40,6 +40,24 @@ GPE_DATA_DIR = Path(__file__).parent.parent / "data" / "raw" / "gpe"
 LIGNES_GPE = {"L15", "L16", "L17", "L18"}
 
 
+def est_gare_gpe(ligne: object) -> bool:
+    """Indique si une gare dessert au moins une ligne du GPE.
+
+    Dans le shapefile, une gare d'interconnexion porte plusieurs lignes séparées
+    par « / » (ex. « L16/L17 », « L14/L18 »). Elle est gardée dès qu'une de ses
+    lignes est une ligne GPE ; une gare de la ligne 14 seule ne l'est pas.
+
+    Args:
+        ligne: Valeur de la colonne LIGNE du shapefile (peut être manquante).
+
+    Returns:
+        True si au moins une des lignes fait partie de LIGNES_GPE.
+    """
+    if not isinstance(ligne, str):
+        return False
+    return any(partie.strip() in LIGNES_GPE for partie in ligne.split("/"))
+
+
 # ---------------------------------------------------------------------------
 # Fonctions
 # ---------------------------------------------------------------------------
@@ -129,7 +147,7 @@ def parse_gpe(extract_dir: Path) -> gpd.GeoDataFrame:
 
     # Filtrage sur les lignes GPE uniquement
     avant = len(gdf)
-    gdf = gdf[gdf["ligne_gpe"].isin(LIGNES_GPE)].copy()
+    gdf = gdf[gdf["ligne_gpe"].map(est_gare_gpe)].copy()
     logger.info("Filtrage lignes GPE : %d → %d gares", avant, len(gdf))
 
     cols = ["nom_gare", "ligne_gpe", "interconnexion", "source", "geometry"]

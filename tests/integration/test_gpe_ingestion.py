@@ -75,13 +75,20 @@ def test_no_nulls_on_critical_columns(column: str) -> None:
 
 
 def test_lignes_gpe_uniquement() -> None:
-    """Vérifie que seules les lignes GPE (L15-L18) sont présentes."""
+    """Vérifie que chaque gare dessert au moins une ligne GPE (L15-L18).
+
+    Une gare d'interconnexion peut combiner plusieurs lignes (ex. 'L16/L17',
+    'L14/L18') : elle est valide dès qu'une de ses lignes est une ligne GPE.
+    """
     with ENGINE.connect() as conn:
         result = conn.execute(
             text(
                 """
                 SELECT DISTINCT ligne_gpe FROM raw.gpe_gares
-                WHERE ligne_gpe NOT IN ('L15', 'L16', 'L17', 'L18')
+                WHERE NOT (
+                    string_to_array(ligne_gpe, '/')
+                    && ARRAY['L15', 'L16', 'L17', 'L18']
+                )
             """
             )
         )
