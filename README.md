@@ -249,7 +249,7 @@ Raison : les tests d'intégration dépendent de téléchargements externes (INSE
 
 - **Gares de la ligne 14 non incluses** : le périmètre « GPE » est limité aux lignes 15, 16, 17 et 18. Les 9 gares du fichier source étiquetées « L14 » seule (prolongements de la ligne 14, maîtrise d'ouvrage RATP) sont écartées. Les gares d'interconnexion qui combinent plusieurs lignes (ex. `L16/L17`, `L14/L18`) sont, elles, incluses dès qu'une de leurs lignes est une ligne GPE. Évolution possible : intégrer la ligne 14 au périmètre, ce qui changerait les résultats.
 - **Source des gares GPE datée** : le shapefile de la Société du Grand Paris date du 15/12/2016 ; il n'a pas été comparé à une source plus récente.
-- **Arrondissements de Paris** : l'API GeoAPI ne fournit pas de coordonnées pour les 20 arrondissements ; ils apparaissent donc sans arrêt ni gare dans les indicateurs d'accessibilité (voir l'issue #39).
+- **Paris représentée par ses 20 arrondissements** : la commune 75056 est exclue pour ne pas compter deux fois les mêmes habitants ; chaque arrondissement est localisé par son centre (GeoAPI). L'accessibilité est mesurée à 1 km du centre de chaque commune ou arrondissement, ce qui reste une approximation pour les grandes communes.
 
 ---
 

@@ -18,6 +18,8 @@ from ingestion.fetch_insee import (
     COLONNES_SORTIE,
     MESURES_INSEE,
     download_insee,
+    enrich_with_geo,
+    fetch_commune_names,
     parse_insee,
 )
 
@@ -154,6 +156,28 @@ def test_parse_insee_garde_les_arrondissements(tmp_path: Path) -> None:
     assert list(result["code_commune"]) == ["75101"]
 
 
+def test_parse_insee_retire_paris_si_ses_arrondissements_sont_presents(
+    tmp_path: Path,
+) -> None:
+    """Paris (75056) et ses arrondissements décrivent les mêmes habitants :
+    on garde les arrondissements pour ne pas les compter deux fois."""
+    df = pd.concat(
+        [
+            make_df_insee(["75056", "92012"]),
+            make_df_insee(["75101", "75102"], geo_object="ARM"),
+        ]
+    )
+    result = parse_insee(write_parquet(df, tmp_path))
+    assert set(result["code_commune"]) == {"75101", "75102", "92012"}
+
+
+def test_parse_insee_garde_paris_si_aucun_arrondissement(tmp_path: Path) -> None:
+    """Sans arrondissements dans le fichier, on ne perd pas Paris."""
+    df = make_df_insee(["75056", "92012"])
+    result = parse_insee(write_parquet(df, tmp_path))
+    assert set(result["code_commune"]) == {"75056", "92012"}
+
+
 def test_parse_insee_ignore_les_autres_niveaux_geographiques(tmp_path: Path) -> None:
     """Un département ou un EPCI d'IDF ne doit pas être pris pour une commune."""
     df = pd.concat(
@@ -225,3 +249,63 @@ def test_parse_insee_leve_erreur_si_colonne_absente(tmp_path: Path) -> None:
     df: Any = make_df_insee(["91228"]).drop(columns=["TAB_MEASURE"])
     with pytest.raises(KeyError, match="TAB_MEASURE"):
         parse_insee(write_parquet(df, tmp_path))
+
+
+# --- GeoAPI : coordonnées et noms, y compris les arrondissements de Paris ---
+
+
+def make_geo_api(centres: bool = True) -> Any:
+    """Simule GeoAPI : Paris (75056) par département, ses arrondissements à part."""
+
+    def fake_get(url: str, timeout: int = 60) -> MagicMock:
+        response = MagicMock()
+        response.raise_for_status = MagicMock()
+        if "arrondissement-municipal" in url:
+            data: list[dict[str, Any]] = [
+                {
+                    "code": "75101",
+                    "nom": "Paris 1er Arrondissement",
+                    "centre": {"type": "Point", "coordinates": [2.3359, 48.862]},
+                },
+                {
+                    "code": "75102",
+                    "nom": "Paris 2e Arrondissement",
+                    "centre": {"type": "Point", "coordinates": [2.3429, 48.8683]},
+                },
+            ]
+        elif "/departements/75/" in url:
+            data = [
+                {
+                    "code": "75056",
+                    "nom": "Paris",
+                    "centre": {"type": "Point", "coordinates": [2.347, 48.8589]},
+                }
+            ]
+        else:
+            data = []
+        response.json.return_value = data
+        return response
+
+    return fake_get
+
+
+def test_enrich_with_geo_donne_des_coordonnees_aux_arrondissements() -> None:
+    df = pd.DataFrame({"code_commune": ["75101", "75102"]})
+    with patch("ingestion.fetch_insee.requests.get", side_effect=make_geo_api()):
+        result = enrich_with_geo(df)
+    assert result["latitude"].notna().all()
+    assert result["longitude"].notna().all()
+    premier = result[result["code_commune"] == "75101"].iloc[0]
+    assert premier["longitude"] == pytest.approx(2.3359)
+    assert premier["latitude"] == pytest.approx(48.862)
+
+
+def test_fetch_commune_names_prend_les_noms_des_arrondissements_dans_l_api() -> None:
+    with (
+        patch("ingestion.fetch_insee.requests.get", side_effect=make_geo_api()),
+        patch("ingestion.fetch_insee.load_to_postgres") as mock_load,
+    ):
+        fetch_commune_names(MagicMock())
+    noms = mock_load.call_args.args[0]
+    arr = noms[noms["code_commune"] == "75102"]
+    assert list(arr["nom_commune"]) == ["Paris 2e Arrondissement"]  # une seule fois

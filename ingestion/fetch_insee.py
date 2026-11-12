@@ -62,6 +62,17 @@ GEO_API_DEPT_URL = (
     "?fields=code,{fields}&format=json"
 )
 
+# Paris est une commune (75056) ET 20 arrondissements (75101-75120) qui décrivent
+# les mêmes habitants. L'API par département ne renvoie que la commune ; les
+# arrondissements (avec leur centre) sont à demander séparément.
+DEPTS_AVEC_ARRONDISSEMENTS = {"75"}
+GEO_API_ARR_URL = (
+    "https://geo.api.gouv.fr/communes?type=arrondissement-municipal"
+    "&codeDepartement={dept}&fields=code,{fields}&format=json"
+)
+# Commune remplacée par ses arrondissements -> préfixe de leurs codes
+COMMUNES_REMPLACEES = {"75056": "751"}
+
 
 def download_insee(
     url: str = INSEE_URL, dest: Path = INSEE_PATH, timeout: int = 120
@@ -179,6 +190,15 @@ def parse_insee(parquet_path: Path) -> pd.DataFrame:
     df.index.name = "code_commune"
     df = df.reindex(columns=COLONNES_SORTIE).reset_index()
 
+    # On garde les arrondissements plutôt que la commune qu'ils composent, pour ne
+    # pas compter deux fois les mêmes habitants (sans arrondissements, on garde la
+    # commune plutôt que de la perdre).
+    for commune, prefixe in COMMUNES_REMPLACEES.items():
+        if df["code_commune"].str.startswith(prefixe).any():
+            df = df[df["code_commune"] != commune]
+        else:
+            logger.warning("Pas d'arrondissements %s* : %s conservée", prefixe, commune)
+
     # Calcul du taux de chômage : nb_chomeurs / nb_actifs
     # Résultat entre 0 et 1, NaN si nb_actifs est nul ou manquant
     df["taux_chomage"] = df["nb_chomeurs"] / df["nb_actifs"].where(df["nb_actifs"] > 0)
@@ -211,6 +231,13 @@ def _fetch_geo_data(fields: str) -> list[dict[str, Any]]:
             dept,
             len(data),
         )
+    for dept in sorted(DEPTS_AVEC_ARRONDISSEMENTS):
+        url = GEO_API_ARR_URL.format(dept=dept, fields=fields)
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        rows.extend(data)
+        logger.info("Département %s : %d arrondissements récupérés", dept, len(data))
     return rows
 
 
@@ -310,17 +337,6 @@ def fetch_commune_names(engine: Engine) -> None:
     rows = [
         {"code_commune": c["code"], "nom_commune": c["nom"]} for c in raw if "nom" in c
     ]
-
-    # Paris : GeoAPI retourne 75056 mais INSEE utilise arrondissements
-    # 75101-75120
-    paris_rows = [
-        {
-            "code_commune": f"751{i:02d}",
-            "nom_commune": (f"Paris {i}{'er' if i == 1 else 'e'} Arrondissement"),
-        }
-        for i in range(1, 21)
-    ]
-    rows.extend(paris_rows)
 
     # Saint-Ouen : renommée Saint-Ouen-sur-Seine en 2019
     rows.append({"code_commune": "93059", "nom_commune": "Saint-Ouen-sur-Seine"})
