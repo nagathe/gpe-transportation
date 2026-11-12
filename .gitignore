@@ -19,3 +19,6 @@ data/
 
 # OS
 .DS_Store
+
+# Notes personnelles
+notes_audit.txt
