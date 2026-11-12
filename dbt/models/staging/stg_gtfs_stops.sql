@@ -19,7 +19,7 @@
 -- =============================================================================
 
 with source as (
-    select * from raw.gtfs_stops
+    select * from {{ source('raw', 'gtfs_stops') }}
 )
 
 select

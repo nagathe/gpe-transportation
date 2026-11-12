@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: gtfs_stops
+      - name: insee_communes
+      - name: commune_names
+      - name: gpe_gares

@@ -20,14 +20,14 @@
 -- =============================================================================
 
 with source as (
-    select * from raw.insee_communes
+    select * from {{ source('raw', 'insee_communes') }}
 ),
 
 ref as (
     select distinct on (code_commune)
         code_commune,
         nom_commune
-    from raw.commune_names
+    from {{ source('raw', 'commune_names') }}
     order by code_commune
 )
 
