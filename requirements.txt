@@ -11,19 +11,15 @@ geopandas==0.14.3             # manipulation de données géographiques
 fiona==1.9.4                  # format de lecture/écriture géospatial
 pyproj==3.6.1                 # projections cartographiques
 shapely==2.0.3                # manipulation de géométries (dépendance geopandas)
+pyarrow==24.0.0               # lecture du Parquet INSEE (dépendance directe)
 
 # === Transformation ===
 dbt-core==1.8.1               # force version stable (pas alpha)
 dbt-postgres==1.8.1           # transformations SQL versionnées
 protobuf>=4.0,<7.0            # compatibilité avec dbt-postgres
 
-# === Machine Learning ===
-scikit-learn==1.4.2           # clustering k-means + régression
-numpy==1.26.4                 # calcul numérique
-
-# === Visualisation / App ===
-streamlit==1.32.0             # application web interactive
-plotly==5.22.0
+# === Compatibilité ===
+numpy==1.26.4                 # contrainte de compatibilité (pandas 2.2.0, shapely) ; non importé directement
 
 # === Configuration ===
 python-dotenv==1.0.0          # charger variables d'env depuis .env
