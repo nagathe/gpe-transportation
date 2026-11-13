@@ -125,6 +125,8 @@ def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
 
     La table n'est jamais supprimée : elle garde sa clé primaire et ses
     types (db/init.sql), et les vues dbt qui en dépendent restent valides.
+    Le chargement est atomique : en cas d'échec, les anciennes données
+    restent en place.
 
     Args:
         dest_dir: Répertoire contenant stops.txt.
@@ -141,20 +143,21 @@ def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
     df = prepare_stops(filepath)
     logger.info("Chargement de %d arrêts dans raw.gtfs_stops", len(df))
 
+    # TRUNCATE et insertion dans la même transaction : en cas d'échec,
+    # PostgreSQL annule les deux et l'ancienne table reste intacte (#19).
     with engine.begin() as conn:
         if not engine.dialect.has_table(conn, "gtfs_stops", schema="raw"):
             raise RuntimeError(
                 "Table raw.gtfs_stops absente : lancer make db-init d'abord"
             )
         conn.execute(text("TRUNCATE TABLE raw.gtfs_stops"))
-
-    df.to_sql(
-        name="gtfs_stops",
-        con=engine,
-        schema="raw",
-        if_exists="append",
-        index=False,
-    )
+        df.to_sql(
+            name="gtfs_stops",
+            con=conn,
+            schema="raw",
+            if_exists="append",
+            index=False,
+        )
     logger.info("Chargement terminé")
 
 

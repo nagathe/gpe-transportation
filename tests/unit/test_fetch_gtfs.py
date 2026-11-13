@@ -175,6 +175,8 @@ def test_load_to_postgres_vide_la_table_sans_la_supprimer(
     requetes = [str(c.args[0]) for c in mock_conn.execute.call_args_list]
     assert requetes == ["TRUNCATE TABLE raw.gtfs_stops"]
     assert mock_to_sql.call_args.kwargs["if_exists"] == "append"
+    # Même connexion que le TRUNCATE, donc même transaction (#19)
+    assert mock_to_sql.call_args.kwargs["con"] is mock_conn
 
 
 # --- prepare_stops ---
