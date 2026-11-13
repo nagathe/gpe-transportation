@@ -157,31 +157,25 @@ def parse_gpe(extract_dir: Path) -> gpd.GeoDataFrame:
 def load_to_postgres(gdf: gpd.GeoDataFrame, engine: Engine) -> None:
     """Charge le GeoDataFrame en base dans raw.gpe_gares.
     Utilise TRUNCATE + INSERT pour préserver les vues dépendantes.
+    Le chargement est atomique : en cas d'échec, les anciennes données
+    restent en place.
 
     Args:
         gdf: GeoDataFrame des gares GPE nettoyé.
         engine: Connexion SQLAlchemy vers PostgreSQL/PostGIS.
     """
     logger.info("Chargement de %d gares dans raw.gpe_gares", len(gdf))
+    # Une seule transaction : en cas d'échec, PostgreSQL annule aussi
+    # le TRUNCATE et l'ancienne table reste intacte (#19).
     with engine.begin() as conn:
         exists = engine.dialect.has_table(conn, "gpe_gares", schema="raw")
-
-    if exists:
-        with engine.begin() as conn:
+        if exists:
             conn.execute(text("TRUNCATE TABLE raw.gpe_gares"))
         gdf.to_postgis(
             name="gpe_gares",
-            con=engine,
+            con=conn,
             schema="raw",
-            if_exists="append",
-            index=False,
-        )
-    else:
-        gdf.to_postgis(
-            name="gpe_gares",
-            con=engine,
-            schema="raw",
-            if_exists="replace",
+            if_exists="append" if exists else "replace",
             index=False,
         )
 

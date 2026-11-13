@@ -280,6 +280,8 @@ def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
     """
     Charge un DataFrame dans PostgreSQL (schéma raw).
     Utilise TRUNCATE + INSERT pour préserver les vues dépendantes.
+    Le chargement est atomique : en cas d'échec, les anciennes données
+    restent en place.
 
     Args:
         df: DataFrame à charger.
@@ -288,27 +290,18 @@ def load_to_postgres(df: pd.DataFrame, table: str, engine: Engine) -> None:
     """
     logger.info("Chargement de %d lignes dans raw.%s", len(df), table)
     try:
-        # Vérifie si la table existe déjà
+        # Une seule transaction : en cas d'échec, PostgreSQL annule aussi
+        # le TRUNCATE et l'ancienne table reste intacte (#19).
         with engine.begin() as conn:
             exists = engine.dialect.has_table(conn, table, schema="raw")
-
-        if exists:
-            # Vide la table sans la supprimer (les vues dbt restent valides)
-            with engine.begin() as conn:
+            if exists:
+                # Vide la table sans la supprimer (les vues dbt restent valides)
                 conn.execute(text(f"TRUNCATE TABLE raw.{table}"))
             df.to_sql(
                 table,
-                engine,
+                conn,
                 schema="raw",
-                if_exists="append",
-                index=False,
-            )
-        else:
-            df.to_sql(
-                table,
-                engine,
-                schema="raw",
-                if_exists="replace",
+                if_exists="append" if exists else "replace",
                 index=False,
             )
 

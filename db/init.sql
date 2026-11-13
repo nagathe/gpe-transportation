@@ -20,44 +20,7 @@ CREATE TABLE IF NOT EXISTS raw.gtfs_stops (
     stop_timezone VARCHAR(50),
     wheelchair_boarding INT
 );
-
-CREATE TABLE IF NOT EXISTS raw.gtfs_routes (
-    route_id TEXT,
-    agency_id TEXT,
-    route_short_name TEXT,
-    route_long_name TEXT,
-    route_desc TEXT,
-    route_type TEXT,
-    route_url TEXT,
-    route_color TEXT,
-    route_text_color TEXT
-);
-
-CREATE TABLE IF NOT EXISTS raw.gtfs_trips (
-    route_id TEXT,
-    service_id TEXT,
-    trip_id TEXT,
-    trip_headsign TEXT,
-    trip_short_name TEXT,
-    direction_id TEXT,
-    block_id TEXT,
-    shape_id TEXT,
-    wheelchair_accessible TEXT,
-    bikes_allowed TEXT
-);
-
-CREATE TABLE IF NOT EXISTS raw.gtfs_stop_times (
-    trip_id TEXT,
-    arrival_time TEXT,
-    departure_time TEXT,
-    stop_id TEXT,
-    stop_sequence TEXT,
-    stop_headsign TEXT,
-    pickup_type TEXT,
-    drop_off_type TEXT,
-    shape_dist_traveled TEXT,
-    timepoint TEXT
-);
+-- routes, trips et stop_times ne sont pas chargés (inutilisés par dbt, #21).
 
 -- ===== INSEE COMMUNES =====
 CREATE TABLE IF NOT EXISTS raw.insee_communes (
