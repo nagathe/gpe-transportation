@@ -1,190 +1,152 @@
 """
 Tests d'intégration pour l'ingestion GTFS.
 
-Vérifie que les données GTFS sont correctement chargées
-en base PostgreSQL (schéma raw).
+Appelle le vrai fetch_gtfs.load_to_postgres sur une base temporaire
+dont la structure vient de db/init.sql (fixture test_engine, conftest.py).
 """
 
-import pandas as pd
+from pathlib import Path
+
 import pytest
-from pytest_postgresql import factories
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
 
-# --- Fixtures PostgreSQL temporaire ---
+from ingestion.fetch_gtfs import STOPS_COLUMNS, load_to_postgres
 
-postgresql_proc = factories.postgresql_proc(
-    host="localhost",
-    user="gpe",
+# En-tête réel du stops.txt d'IDFM (15 colonnes, dont 5 hors DDL)
+ENTETE = (
+    "stop_id,stop_code,stop_name,stop_desc,stop_lon,stop_lat,zone_id,"
+    "stop_url,location_type,parent_station,stop_timezone,level_id,"
+    "wheelchair_boarding,platform_code,stop_access"
 )
-postgresql = factories.postgresql("postgresql_proc")
 
 
-# --- Helpers ---
-
-
-def get_engine(postgresql) -> object:
-    """Crée un engine SQLAlchemy connecté à la base de test temporaire.
-
-    Args:
-        postgresql: fixture pytest-postgresql avec les infos de connexion.
-
-    Returns:
-        Engine SQLAlchemy prêt à l'emploi.
-    """
-    return create_engine(
-        f"postgresql+psycopg2://gpe:gpe@localhost/{postgresql.info.dbname}"
-    )
-
-
-def create_raw_schema(engine) -> None:
-    """Crée le schéma raw s'il n'existe pas.
-
-    Args:
-        engine: Engine SQLAlchemy connecté à la base cible.
-    """
-    with engine.begin() as conn:
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS raw"))
-
-
-def load_stops(engine, df: pd.DataFrame) -> None:
-    """Charge un DataFrame de stops dans raw.stops.
-
-    Args:
-        engine: Engine SQLAlchemy connecté à la base cible.
-        df: DataFrame contenant stop_id, stop_name, stop_lat, stop_lon.
-    """
-    df.to_sql("stops", engine, schema="raw", if_exists="replace", index=False)
-
-
-# --- Fixtures de données ---
+def ecrire_stops(dossier: Path, lignes: list[str]) -> None:
+    """Écrit un stops.txt (en-tête IDFM + lignes) dans le dossier."""
+    contenu = "\n".join([ENTETE, *lignes]) + "\n"
+    (dossier / "stops.txt").write_text(contenu)
 
 
 @pytest.fixture
-def sample_stops() -> pd.DataFrame:
-    """Retourne un DataFrame minimal de stops GTFS pour les tests.
-
-    Returns:
-        DataFrame avec 2 arrêts valides.
-    """
-    return pd.DataFrame(
-        {
-            "stop_id": ["STOP_001", "STOP_002"],
-            "stop_name": ["Gare A", "Gare B"],
-            "stop_lat": [48.8566, 48.9000],
-            "stop_lon": [2.3522, 2.4000],
-        }
+def stops_charges(test_engine: Engine, tmp_path: Path) -> Engine:
+    """Charge 2 arrêts via load_to_postgres et retourne l'engine."""
+    ecrire_stops(
+        tmp_path,
+        [
+            "0001,,Denfert-Rochereau,,2.333220634641387,48.83318643678081,"
+            "1,,0,IDFM:71056,,,1,,",
+            "IDFM:2,,Cité Universitaire,,2.3388576809777035,"
+            "48.82150600684166,1,,0,IDFM:70623,,,2,,",
+        ],
     )
+    load_to_postgres(tmp_path, test_engine)
+    return test_engine
 
 
-@pytest.fixture
-def stops_in_db(postgresql, sample_stops):
-    """Charge les stops de test en base et retourne l'engine.
-
-    Fixture réutilisable par plusieurs tests qui ont besoin
-    de données déjà présentes en base.
-
-    Args:
-        postgresql: fixture pytest-postgresql.
-        sample_stops: fixture DataFrame de stops.
-
-    Returns:
-        Engine SQLAlchemy connecté à la base de test.
-    """
-    engine = get_engine(postgresql)
-    create_raw_schema(engine)
-    load_stops(engine, sample_stops)
-    return engine
+def test_charge_toutes_les_lignes(stops_charges: Engine) -> None:
+    """Les 2 arrêts du fichier sont en base."""
+    with stops_charges.connect() as conn:
+        requete = text("SELECT COUNT(*) FROM raw.gtfs_stops")
+        assert conn.execute(requete).scalar() == 2
 
 
-# --- Tests ---
+def test_colonnes_du_ddl_uniquement(stops_charges: Engine) -> None:
+    """La table garde les 10 colonnes de init.sql (pas zone_id, etc.)."""
+    with stops_charges.connect() as conn:
+        colonnes = conn.execute(
+            text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'raw' AND table_name = 'gtfs_stops' "
+                "ORDER BY ordinal_position"
+            )
+        ).scalars()
+        assert list(colonnes) == STOPS_COLUMNS
 
 
-def test_stops_count(stops_in_db):
-    """Vérifie que le bon nombre de stops est chargé en base."""
-    with stops_in_db.connect() as conn:
-        result = conn.execute(text("SELECT COUNT(*) FROM raw.stops")).scalar()
-    assert result == 2
+def test_cle_primaire_conservee(stops_charges: Engine) -> None:
+    """Après chargement, stop_id est toujours la clé primaire (#20)."""
+    with stops_charges.connect() as conn:
+        colonnes_pk = conn.execute(
+            text(
+                "SELECT kcu.column_name "
+                "FROM information_schema.table_constraints tc "
+                "JOIN information_schema.key_column_usage kcu "
+                "  ON tc.constraint_name = kcu.constraint_name "
+                " AND tc.table_schema = kcu.table_schema "
+                "WHERE tc.table_schema = 'raw' "
+                "  AND tc.table_name = 'gtfs_stops' "
+                "  AND tc.constraint_type = 'PRIMARY KEY'"
+            )
+        ).scalars()
+        assert list(colonnes_pk) == ["stop_id"]
 
 
-def test_stops_columns_present(stops_in_db):
-    """Vérifie que toutes les colonnes attendues sont présentes."""
-    with stops_in_db.connect() as conn:
-        query = text("SELECT * FROM raw.stops LIMIT 1")
-        result = conn.execute(query).mappings().first()
-
-    expected_columns = {"stop_id", "stop_name", "stop_lat", "stop_lon"}
-    assert expected_columns.issubset(set(result.keys()))
-
-
-def test_stops_ids_correct(stops_in_db):
-    """Vérifie que les stop_id chargés correspondent aux données source."""
-    with stops_in_db.connect() as conn:
-        rows = conn.execute(
-            text("SELECT stop_id FROM raw.stops ORDER BY stop_id")
-        ).fetchall()
-
-    loaded_ids = {row[0] for row in rows}
-    assert loaded_ids == {"STOP_001", "STOP_002"}
+def test_identifiants_restent_du_texte(stops_charges: Engine) -> None:
+    """'0001' ne devient pas 1."""
+    with stops_charges.connect() as conn:
+        ids = conn.execute(
+            text("SELECT stop_id FROM raw.gtfs_stops ORDER BY stop_id")
+        ).scalars()
+        assert list(ids) == ["0001", "IDFM:2"]
 
 
-def test_stops_coordinates_are_floats(stops_in_db):
-    """Vérifie que les coordonnées sont bien stockées comme des numériques."""
-    with stops_in_db.connect() as conn:
-        query = text(
-            "SELECT stop_lat, stop_lon FROM raw.stops " "WHERE stop_id = 'STOP_001'"
+def test_coordonnees_et_codes_types(stops_charges: Engine) -> None:
+    """Coordonnées numériques (8 décimales du DDL), codes entiers."""
+    with stops_charges.connect() as conn:
+        lat, lon, location_type = conn.execute(
+            text(
+                "SELECT stop_lat, stop_lon, location_type "
+                "FROM raw.gtfs_stops WHERE stop_id = '0001'"
+            )
+        ).one()
+    assert float(lat) == pytest.approx(48.83318644)
+    assert float(lon) == pytest.approx(2.33322063)
+    assert location_type == 0
+
+
+def test_rechargement_remplace_les_donnees(
+    stops_charges: Engine, tmp_path: Path
+) -> None:
+    """Un second chargement remplace les données, sans accumulation."""
+    nouveau_dossier = tmp_path / "second"
+    nouveau_dossier.mkdir()
+    ecrire_stops(nouveau_dossier, ["STOP_999,,Nouvelle Gare,,2.1,48.7,,,,,,,,,"])
+
+    load_to_postgres(nouveau_dossier, stops_charges)
+
+    with stops_charges.connect() as conn:
+        ids = conn.execute(text("SELECT stop_id FROM raw.gtfs_stops"))
+        assert list(ids.scalars()) == ["STOP_999"]
+
+
+def test_vue_dependante_survit_au_rechargement(
+    stops_charges: Engine, tmp_path: Path
+) -> None:
+    """Une vue sur raw.gtfs_stops reste valide après rechargement (#24)."""
+    with stops_charges.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE VIEW staging.vue_test AS " "SELECT stop_id FROM raw.gtfs_stops"
+            )
         )
-        row = conn.execute(query).fetchone()
 
-    # On vérifie que ce sont bien des valeurs numériques exploitables
-    assert isinstance(float(row[0]), float)
-    assert isinstance(float(row[1]), float)
+    load_to_postgres(tmp_path, stops_charges)
 
-
-def test_empty_dataframe_loads_without_error(postgresql):
-    """Vérifie qu'un DataFrame vide ne plante pas le chargement.
-
-    Cas limite : si la source GTFS est vide (fichier corrompu ou absent),
-    on ne doit pas avoir d'exception non gérée.
-    """
-    engine = get_engine(postgresql)
-    create_raw_schema(engine)
-
-    columns = ["stop_id", "stop_name", "stop_lat", "stop_lon"]
-    empty_df = pd.DataFrame(columns=columns)
-
-    # Ne doit pas lever d'exception
-    load_stops(engine, empty_df)
-
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT COUNT(*) FROM raw.stops")).scalar()
-
-    assert result == 0
+    with stops_charges.connect() as conn:
+        requete = text("SELECT COUNT(*) FROM staging.vue_test")
+        assert conn.execute(requete).scalar() == 2
 
 
-def test_replace_existing_data(postgresql, sample_stops):
-    """Vérifie que if_exists='replace' écrase bien les données précédentes.
+def test_fichier_sans_arret_vide_la_table(
+    stops_charges: Engine, tmp_path: Path
+) -> None:
+    """Un stops.txt sans ligne charge zéro arrêt, sans erreur."""
+    dossier_vide = tmp_path / "vide"
+    dossier_vide.mkdir()
+    ecrire_stops(dossier_vide, [])
 
-    Important : on ne veut pas d'accumulation de données entre deux runs.
-    """
-    engine = get_engine(postgresql)
-    create_raw_schema(engine)
+    load_to_postgres(dossier_vide, stops_charges)
 
-    # Premier chargement
-    load_stops(engine, sample_stops)
-
-    # Deuxième chargement avec données différentes
-    new_stops = pd.DataFrame(
-        {
-            "stop_id": ["STOP_999"],
-            "stop_name": ["Nouvelle Gare"],
-            "stop_lat": [48.7000],
-            "stop_lon": [2.1000],
-        }
-    )
-    load_stops(engine, new_stops)
-
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT COUNT(*) FROM raw.stops")).scalar()
-
-    # Doit contenir 1 seul stop, pas 3
-    assert result == 1
+    with stops_charges.connect() as conn:
+        requete = text("SELECT COUNT(*) FROM raw.gtfs_stops")
+        assert conn.execute(requete).scalar() == 0
