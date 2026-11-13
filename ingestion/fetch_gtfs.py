@@ -22,8 +22,10 @@ logger = logging.getLogger(__name__)
 GTFS_URL = "https://eu.ftp.opendatasoft.com/stif/GTFS/IDFM-gtfs.zip"
 RAW_DIR = Path("data/raw/gtfs")
 
-# Fichiers GTFS qu'on veut charger (on garde l'essentiel)
-GTFS_FILES = ["stops.txt", "routes.txt", "trips.txt", "stop_times.txt"]
+# Seul stops.txt est utilisé par dbt (stg_gtfs_stops). routes, trips et
+# stop_times (~740 Mo décompressés, dont 695 Mo pour stop_times) ne sont pas
+# chargés : décision #21, option A.
+GTFS_FILES = ["stops.txt"]
 
 
 def download_gtfs(url: str, dest_dir: Path) -> Path:

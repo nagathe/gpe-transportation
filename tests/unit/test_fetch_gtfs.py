@@ -71,14 +71,30 @@ def test_extract_gtfs_extrait_stops(tmp_path: Path) -> None:
 
 def test_extract_gtfs_fichier_absent_ignore(tmp_path: Path) -> None:
     """Un fichier manquant dans le ZIP ne doit pas lever d'erreur."""
-    csv_content = "stop_id,stop_name\n1,Test\n"
-    zip_path = make_zip({"stops.txt": csv_content}, tmp_path / "test.zip")
+    zip_path = make_zip({"agency.txt": "agency_id\n1\n"}, tmp_path / "a.zip")
 
-    # Ne doit pas lever d'erreur même si routes.txt est absent
+    # Ne doit pas lever d'erreur même si stops.txt est absent
     extract_gtfs(zip_path, tmp_path)
 
-    assert (tmp_path / "stops.txt").exists()
-    assert not (tmp_path / "routes.txt").exists()
+    assert not (tmp_path / "stops.txt").exists()
+
+
+def test_extract_gtfs_n_extrait_que_stops(tmp_path: Path) -> None:
+    """Seul stops.txt est extrait : routes, trips, stop_times ignorés."""
+    zip_path = make_zip(
+        {
+            "stops.txt": "stop_id,stop_name\n1,Test\n",
+            "routes.txt": "route_id\nR1\n",
+            "trips.txt": "trip_id\nT1\n",
+            "stop_times.txt": "trip_id,stop_id\nT1,1\n",
+        },
+        tmp_path / "test.zip",
+    )
+
+    extract_gtfs(zip_path, tmp_path)
+
+    extraits = {p.name for p in tmp_path.glob("*.txt")}
+    assert extraits == {"stops.txt"}
 
 
 def test_extract_gtfs_zip_invalide_leve_erreur(tmp_path: Path) -> None:
