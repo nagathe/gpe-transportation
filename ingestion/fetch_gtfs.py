@@ -27,6 +27,22 @@ RAW_DIR = Path("data/raw/gtfs")
 # chargés : décision #21, option A.
 GTFS_FILES = ["stops.txt"]
 
+# Colonnes de raw.gtfs_stops dans db/init.sql. Les autres colonnes de
+# stops.txt (zone_id, stop_url, level_id, platform_code, stop_access) ne
+# sont pas chargées.
+STOPS_COLUMNS = [
+    "stop_id",
+    "stop_code",
+    "stop_name",
+    "stop_desc",
+    "stop_lat",
+    "stop_lon",
+    "location_type",
+    "parent_station",
+    "stop_timezone",
+    "wheelchair_boarding",
+]
+
 
 def download_gtfs(url: str, dest_dir: Path) -> Path:
     """Télécharge le ZIP GTFS et le sauvegarde localement.
@@ -75,46 +91,71 @@ def extract_gtfs(zip_path: Path, dest_dir: Path) -> None:
                 logger.warning("Fichier absent du ZIP : %s", filename)
 
 
-def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
-    """Charge les fichiers GTFS en base dans le schema raw.
+def prepare_stops(filepath: Path) -> pd.DataFrame:
+    """Lit stops.txt et l'aligne sur le DDL de raw.gtfs_stops.
 
-    Supprime les vues dépendantes avant le rechargement pour éviter les
-    conflits de contrainte (DROP VIEW ... CASCADE).
+    Garde uniquement les colonnes de STOPS_COLUMNS, dans cet ordre (une
+    colonne absente du fichier est ajoutée vide). Les identifiants restent
+    en texte ('0001' ne devient pas 1) ; coordonnées et codes sont
+    convertis en nombres.
 
     Args:
-        dest_dir: Répertoire contenant les fichiers .txt extraits.
-        engine: Connexion SQLAlchemy vers PostgreSQL.
+        filepath: Chemin vers stops.txt.
+
+    Returns:
+        DataFrame prêt à être inséré dans raw.gtfs_stops.
+
+    Raises:
+        ValueError: Si la colonne stop_id est absente.
     """
-    for filename in GTFS_FILES:
-        filepath = dest_dir / filename
-        if not filepath.exists():
-            logger.warning("Fichier introuvable, skip : %s", filepath)
-            continue
+    df = pd.read_csv(filepath, dtype=str)
+    if "stop_id" not in df.columns:
+        raise ValueError(f"Colonne stop_id absente de {filepath}")
 
-        table_name = f"gtfs_{filepath.stem}"
-        logger.info("Chargement de %s → raw.%s", filename, table_name)
+    df = df.reindex(columns=STOPS_COLUMNS)
+    for col in ["stop_lat", "stop_lon"]:
+        df[col] = pd.to_numeric(df[col])
+    for col in ["location_type", "wheelchair_boarding"]:
+        df[col] = pd.to_numeric(df[col]).astype("Int64")
+    return df
 
-        try:
-            # Supprime les vues dépendantes avant de recréer la table raw
-            with engine.begin() as conn:
-                query = f"DROP VIEW IF EXISTS staging.stg_{table_name} CASCADE;"
-                conn.execute(text(query))
-                msg = f"Vues dépendantes nettoyées pour raw.{table_name}"
-                logger.info(msg)
 
-            # Charge les données
-            df = pd.read_csv(filepath, dtype=str, low_memory=False)
-            df.to_sql(
-                name=table_name,
-                con=engine,
-                schema="raw",
-                if_exists="replace",
-                index=False,
+def load_to_postgres(dest_dir: Path, engine: Engine) -> None:
+    """Charge stops.txt dans raw.gtfs_stops (TRUNCATE + INSERT).
+
+    La table n'est jamais supprimée : elle garde sa clé primaire et ses
+    types (db/init.sql), et les vues dbt qui en dépendent restent valides.
+
+    Args:
+        dest_dir: Répertoire contenant stops.txt.
+        engine: Connexion SQLAlchemy vers PostgreSQL.
+
+    Raises:
+        FileNotFoundError: Si stops.txt est absent.
+        RuntimeError: Si raw.gtfs_stops n'existe pas (make db-init).
+    """
+    filepath = dest_dir / "stops.txt"
+    if not filepath.exists():
+        raise FileNotFoundError(f"Fichier GTFS introuvable : {filepath}")
+
+    df = prepare_stops(filepath)
+    logger.info("Chargement de %d arrêts dans raw.gtfs_stops", len(df))
+
+    with engine.begin() as conn:
+        if not engine.dialect.has_table(conn, "gtfs_stops", schema="raw"):
+            raise RuntimeError(
+                "Table raw.gtfs_stops absente : lancer make db-init d'abord"
             )
-            logger.info("  Chargé en base : %d lignes", len(df))
-        except Exception as e:
-            logger.error("Échec chargement raw.%s : %s", table_name, e)
-            raise
+        conn.execute(text("TRUNCATE TABLE raw.gtfs_stops"))
+
+    df.to_sql(
+        name="gtfs_stops",
+        con=engine,
+        schema="raw",
+        if_exists="append",
+        index=False,
+    )
+    logger.info("Chargement terminé")
 
 
 def main() -> None:
