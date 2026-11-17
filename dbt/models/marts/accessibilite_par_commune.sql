@@ -2,8 +2,8 @@
 -- MART : accessibilite_par_commune
 -- =============================================================================
 -- Objectif : Calculer le niveau d'accessibilité actuel de chaque commune
---            en comptant le nombre d'arrêts de transport en commun
---            dans un rayon de 1km autour du centre de la commune.
+--            en comptant le nombre de zones d'arrêt (stations) de transport
+--            en commun dans un rayon de 1km autour du centre de la commune.
 --
 -- Sources   : staging.stg_insee_communes
 --             staging.stg_gtfs_stops
@@ -27,7 +27,7 @@ with communes as (
 ),
 
 stops as (
-    -- Tous les arrêts de transport en commun actuels (réseau IDFM)
+    -- Zones d'arrêt actuelles du réseau IDFM (une station = un arrêt, cf. #6)
     select * from {{ ref('stg_gtfs_stops') }}
 ),
 

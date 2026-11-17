@@ -18,8 +18,9 @@
 -- Notes métier :
 --   - Rayon de 2km pour les gares GPE (vs 1km pour arrêts bus/métro)
 --     car les gares GPE sont des nœuds structurants, pas des arrêts de proximité
---   - Les seuils de categorie_gain (10, 50 arrêts/10000 hab) sont calibrés
---     sur la distribution observée en IDF
+--   - Les seuils de categorie_gain (2,76 et 16,37 zones d'arrêt/10000 hab,
+--     variables seuil_sous_desserte et seuil_gain_modere) sont calibrés
+--     sur la distribution observée en IDF (voir dbt_project.yml, décision #6)
 --   - taux_chomage calculé ici une seule fois pour éviter la duplication
 --     dans precarite_vs_mobilite
 -- =============================================================================

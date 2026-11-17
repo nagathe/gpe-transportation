@@ -12,3 +12,20 @@ models:
           - not_null:
               config:
                 severity: warn
+
+  - name: stg_gtfs_stops
+    description: >
+      Zones d'arrêt IDFM (location_type = 1) : une station = une ligne.
+      Les quais (0) et les entrées/sorties (2) sont exclus, car ils comptaient
+      la même station plusieurs fois (environ 3,6 fois en moyenne, décision #6).
+    columns:
+      - name: stop_id
+        tests:
+          - not_null
+          - unique
+
+      - name: location_type
+        description: "Toujours 1 (zone d'arrêt). Le test casse si le filtre est retiré."
+        tests:
+          - accepted_values:
+              values: [1]
