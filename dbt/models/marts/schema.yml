@@ -3,12 +3,12 @@ models:
     description: "Accessibilité transport par commune IDF"
     columns:
       - name: code_commune
-        tests:
+        data_tests:
           - not_null
           - unique
 
       - name: nb_arrets_actuels
-        tests:
+        data_tests:
           - not_null:
               config:
                 severity: warn
@@ -17,7 +17,7 @@ models:
     description: "Gain de mobilité apporté par le GPE par commune"
     columns:
       - name: code_commune
-        tests:
+        data_tests:
           - not_null
           - unique
 
@@ -25,7 +25,7 @@ models:
         description: "Ratio entre 0 et 1, repris tel quel de stg_insee_communes (voir sa description)."
 
       - name: categorie_gain
-        tests:
+        data_tests:
           - not_null
           - accepted_values:
               values:
@@ -38,7 +38,7 @@ models:
     description: "Croisement précarité / desserte, une ligne par commune au revenu connu (1 271)"
     columns:
       - name: code_commune
-        tests:
+        data_tests:
           - not_null
           - unique
 
@@ -53,7 +53,7 @@ models:
           Franciliens, jusqu'à Q4 = quart le plus aisé. Chaque groupe compte
           environ 25 % des habitants (vérifié par
           tests/assert_quartiles_revenu_equilibres.sql).
-        tests:
+        data_tests:
           - not_null
           - accepted_values:
               values:

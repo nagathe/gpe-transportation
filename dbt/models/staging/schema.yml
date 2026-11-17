@@ -3,12 +3,12 @@ models:
     description: "Communes IDF avec indicateurs socio-économiques INSEE 2022"
     columns:
       - name: code_commune
-        tests:
+        data_tests:
           - not_null
           - unique
 
       - name: population
-        tests:
+        data_tests:
           - not_null:
               config:
                 severity: warn
@@ -27,12 +27,12 @@ models:
       la même station plusieurs fois (environ 3,6 fois en moyenne, décision #6).
     columns:
       - name: stop_id
-        tests:
+        data_tests:
           - not_null
           - unique
 
       - name: location_type
         description: "Toujours 1 (zone d'arrêt). Le test casse si le filtre est retiré."
-        tests:
+        data_tests:
           - accepted_values:
               values: [1]
