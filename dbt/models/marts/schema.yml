@@ -1,31 +1,96 @@
+# =============================================================================
+# Tests de données des marts (#29)
+# =============================================================================
+# Même principe que staging/schema.yml : chaque description dit ce que le test
+# vérifie et pourquoi ; un test échoue s'il trouve au moins une ligne en défaut.
+# relationships : chaque code_commune d'un mart doit exister dans
+# stg_insee_communes, sinon le mart contiendrait une commune sortie de nulle
+# part (jointure mal faite).
+# Test maison écrit en SQL : tests/assert_quartiles_revenu_equilibres.sql
+# (chaque quartile de revenu regroupe 20 à 30 % des habitants).
+# =============================================================================
+
 models:
   - name: accessibilite_par_commune
-    description: "Accessibilité transport par commune IDF"
+    description: >
+      Desserte actuelle par commune : zones d'arrêt à moins de 1 km du centre
+      de la commune, rapportées à la population (1 285 communes).
     columns:
       - name: code_commune
-        tests:
+        description: >
+          Clé de la commune. Non vide, unique et présente dans
+          stg_insee_communes : une ligne par commune, aucune commune inventée.
+        data_tests:
           - not_null
           - unique
+          - relationships:
+              to: ref('stg_insee_communes')
+              field: code_commune
 
       - name: nb_arrets_actuels
-        tests:
-          - not_null:
-              config:
-                severity: warn
-
-  - name: gain_mobilite
-    description: "Gain de mobilité apporté par le GPE par commune"
-    columns:
-      - name: code_commune
-        tests:
+        description: >
+          Nombre de zones d'arrêt à moins de 1 km. Non vide et >= 0 : un comptage
+          ne peut être ni absent ni négatif. Erreur bloquante (et non simple
+          avertissement) : les données sont propres, une régression doit arrêter
+          le pipeline.
+        data_tests:
           - not_null
-          - unique
+          - valeur_entre:
+              min_value: 0
+
+      - name: arrets_pour_10000_hab
+        description: >
+          Zones d'arrêt pour 10 000 habitants. Non vide et >= 0 : c'est
+          l'indicateur de desserte comparé aux seuils de gain_mobilite et de
+          precarite_vs_mobilite.
+        data_tests:
+          - not_null
+          - valeur_entre:
+              min_value: 0
 
       - name: taux_chomage
-        description: "Ratio entre 0 et 1, repris tel quel de stg_insee_communes (voir sa description)."
+        description: "Ratio entre 0 et 1, repris tel quel de stg_insee_communes (#8)."
+        data_tests:
+          - valeur_entre:
+              min_value: 0
+              max_value: 1
+
+  - name: gain_mobilite
+    description: >
+      Gain de mobilité attendu du GPE par commune : nombre de futures gares à
+      moins de 2 km, croisé avec la desserte actuelle (1 285 communes).
+    columns:
+      - name: code_commune
+        description: "Mêmes règles et raisons que dans accessibilite_par_commune."
+        data_tests:
+          - not_null
+          - unique
+          - relationships:
+              to: ref('stg_insee_communes')
+              field: code_commune
+
+      - name: nb_gares_gpe_futures
+        description: >
+          Futures gares GPE à moins de 2 km. Non vide et >= 0 : il décide si la
+          commune « a une gare » dans toute l'analyse.
+        data_tests:
+          - not_null
+          - valeur_entre:
+              min_value: 0
+
+      - name: taux_chomage
+        description: "Ratio entre 0 et 1, repris tel quel de stg_insee_communes (#8)."
+        data_tests:
+          - valeur_entre:
+              min_value: 0
+              max_value: 1
 
       - name: categorie_gain
-        tests:
+        description: >
+          Fort gain / Gain modéré / Gain faible / Pas de gare GPE. Non vide et
+          limitée à ces 4 valeurs : une faute de frappe dans le SQL créerait une
+          5e catégorie que le dashboard ignorerait.
+        data_tests:
           - not_null
           - accepted_values:
               values:
@@ -35,25 +100,51 @@ models:
                 - "Pas de gare GPE"
 
   - name: precarite_vs_mobilite
-    description: "Croisement précarité / desserte, une ligne par commune au revenu connu (1 271)"
+    description: >
+      Croisement précarité / desserte, une ligne par commune au revenu connu
+      (1 271 : les 14 communes au revenu non diffusé sont exclues).
     columns:
       - name: code_commune
-        tests:
+        description: "Mêmes règles et raisons que dans accessibilite_par_commune."
+        data_tests:
           - not_null
           - unique
+          - relationships:
+              to: ref('stg_insee_communes')
+              field: code_commune
+
+      - name: revenu_median
+        description: >
+          Non vide ici : le mart exclut les communes sans revenu ; une valeur
+          vide signifierait que ce filtre a disparu et fausserait les quartiles.
+        data_tests:
+          - not_null
+
+      - name: taux_chomage
+        description: "Ratio entre 0 et 1, repris tel quel de gain_mobilite (#8)."
+        data_tests:
+          - valeur_entre:
+              min_value: 0
+              max_value: 1
 
       - name: part_habitants_cumulee
         description: >
           Part des Franciliens (communes au revenu connu) qui vivent dans une
-          commune au revenu médian inférieur ou égal. Entre 0 et 1.
+          commune au revenu médian inférieur ou égal. Non vide et entre 0 et 1 :
+          c'est une part cumulée ; hors plage, le calcul des quartiles est faux.
+        data_tests:
+          - not_null
+          - valeur_entre:
+              min_value: 0
+              max_value: 1
 
       - name: quartile_revenu
         description: >
           Quartile d'habitants : Q1 = communes du quart le plus pauvre des
-          Franciliens, jusqu'à Q4 = quart le plus aisé. Chaque groupe compte
-          environ 25 % des habitants (vérifié par
-          tests/assert_quartiles_revenu_equilibres.sql).
-        tests:
+          Franciliens, jusqu'à Q4 = quart le plus aisé (#36). Non vide et limité
+          aux 4 libellés ; l'équilibre (20 à 30 % des habitants par quartile) est
+          vérifié par tests/assert_quartiles_revenu_equilibres.sql.
+        data_tests:
           - not_null
           - accepted_values:
               values:
@@ -61,3 +152,17 @@ models:
                 - "Q2 - Précaire"
                 - "Q3 - Médian"
                 - "Q4 - Aisé"
+
+      - name: profil_territoire
+        description: >
+          Territoire oublié / ciblé par GPE / aisé avec GPE / standard :
+          l'indicateur clé des visualisations. Non vide et limité à ces 4
+          valeurs, pour la même raison que categorie_gain.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values:
+                - "Territoire oublié"
+                - "Territoire ciblé par GPE"
+                - "Territoire aisé avec GPE"
+                - "Territoire standard"

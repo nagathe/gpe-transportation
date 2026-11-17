@@ -1,24 +1,89 @@
+# =============================================================================
+# Tests de données du staging (#29)
+# =============================================================================
+# Chaque test dit CE QU'IL VÉRIFIE et POURQUOI, dans la description de la
+# colonne. Fonctionnement commun : un test dbt est une requête qui renvoie les
+# lignes en défaut ; il échoue s'il en trouve au moins une.
+#   - not_null / unique / accepted_values / relationships : tests intégrés à dbt
+#   - valeur_entre : test maison (tests/generic/valeur_entre.sql), NULL acceptés
+# Lancer : make dbt-test (charge .env).
+# Zone Île-de-France utilisée pour les coordonnées : latitude 48,1 à 49,3 et
+# longitude 1,4 à 3,6 (rectangle qui contient toute la région).
+# =============================================================================
+
 models:
   - name: stg_insee_communes
-    description: "Communes IDF avec indicateurs socio-économiques INSEE 2022"
+    description: >
+      Une ligne par commune d'Île-de-France (1 285), avec ses indicateurs
+      INSEE (dossier complet) et ses coordonnées (GeoAPI).
     columns:
       - name: code_commune
-        tests:
+        description: >
+          Code INSEE de la commune. Non vide et unique : c'est la clé de
+          jointure de tous les marts ; un doublon dupliquerait des communes
+          dans tous les résultats.
+        data_tests:
           - not_null
           - unique
 
+      - name: nom_commune
+        description: >
+          Nom de la commune. Non vide : il sert d'étiquette dans le dashboard ;
+          vide, il signale une jointure ratée avec raw.commune_names.
+        data_tests:
+          - not_null
+
       - name: population
-        tests:
-          - not_null:
-              config:
-                severity: warn
+        description: >
+          Population municipale. Non vide et > 0 : c'est le dénominateur de
+          arrets_pour_10000_hab et la base des quartiles d'habitants ; 0 ou
+          vide fausserait ces calculs. Erreur bloquante (et non simple
+          avertissement) : les données sont propres, une régression doit arrêter
+          le pipeline.
+        data_tests:
+          - not_null
+          - valeur_entre:
+              min_value: 1
+
+      - name: revenu_median
+        description: >
+          Revenu médian (euros). > 0 quand il existe. Vide pour 14 très petites
+          communes : l'INSEE ne le diffuse pas (secret statistique), d'où
+          l'absence de not_null ; elles sont exclues de precarite_vs_mobilite.
+        data_tests:
+          - valeur_entre:
+              min_value: 1
 
       - name: taux_chomage
         description: >
           Taux de chômage des 15-64 ans = nb_chomeurs / nb_actifs, calculé une
           seule fois à l'ingestion. Ratio entre 0 et 1 (8,7 % = 0,087) ;
-          l'affichage en % est fait par le dashboard. Plage vérifiée par
-          tests/assert_taux_chomage_entre_0_et_1.sql.
+          l'affichage en % est fait par le dashboard. La plage 0-1 détecte un
+          retour à une échelle en % (#8).
+        data_tests:
+          - valeur_entre:
+              min_value: 0
+              max_value: 1
+
+      - name: latitude
+        description: >
+          Latitude du centre de la commune. Non vide et dans l'Île-de-France :
+          sans coordonnées, la commune n'a aucun arrêt ni aucune gare dans les
+          jointures spatiales (c'était le cas de Paris avant #39) ; hors région,
+          les distances seraient fausses.
+        data_tests:
+          - not_null
+          - valeur_entre:
+              min_value: 48.1
+              max_value: 49.3
+
+      - name: longitude
+        description: "Longitude du centre de la commune. Mêmes règles et raisons que latitude."
+        data_tests:
+          - not_null
+          - valeur_entre:
+              min_value: 1.4
+              max_value: 3.6
 
   - name: stg_gtfs_stops
     description: >
@@ -27,12 +92,74 @@ models:
       la même station plusieurs fois (environ 3,6 fois en moyenne, décision #6).
     columns:
       - name: stop_id
-        tests:
+        description: >
+          Identifiant IDFM de la zone d'arrêt. Non vide et unique : un doublon
+          compterait deux fois la même station.
+        data_tests:
           - not_null
           - unique
 
       - name: location_type
-        description: "Toujours 1 (zone d'arrêt). Le test casse si le filtre est retiré."
-        tests:
+        description: >
+          Toujours 1 (zone d'arrêt). Le test casse si le filtre de #6 est retiré
+          et que les quais ou les entrées reviennent dans le comptage.
+        data_tests:
           - accepted_values:
               values: [1]
+
+      - name: stop_lat
+        description: >
+          Latitude de l'arrêt. Non vide : sans coordonnées, l'arrêt disparaît de
+          la jointure spatiale sans prévenir. Pas de test de zone : 22 arrêts
+          sont légitimement hors Île-de-France (lignes IDFM qui sortent de la
+          région).
+        data_tests:
+          - not_null
+
+      - name: stop_lon
+        description: "Longitude de l'arrêt. Mêmes règles et raisons que stop_lat."
+        data_tests:
+          - not_null
+
+  - name: stg_gpe_gares
+    description: >
+      Futures gares du Grand Paris Express, lignes 15 à 18 (60 gares, dont les
+      gares d'interconnexion ; la ligne 14 seule est hors périmètre).
+    columns:
+      - name: nom_gare
+        description: >
+          Nom de la gare. Non vide et unique : c'est la clé utilisée pour compter
+          les gares par commune ; un doublon compterait deux fois la même gare.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: ligne
+        description: >
+          Ligne(s) desservie(s), ex. « L15 » ou « L16/L17 ». Non vide : c'est le
+          critère de filtre du périmètre GPE à l'ingestion.
+        data_tests:
+          - not_null
+
+      - name: geom
+        description: >
+          Position de la gare (Point, WGS84). Non vide : sans position, la gare
+          ne compte pour aucune commune dans gain_mobilite.
+        data_tests:
+          - not_null
+
+      - name: latitude
+        description: >
+          Latitude de la gare, dans l'Île-de-France : toutes les gares GPE y
+          sont ; une valeur hors zone signale une erreur de projection.
+        data_tests:
+          - valeur_entre:
+              min_value: 48.1
+              max_value: 49.3
+
+      - name: longitude
+        description: "Longitude de la gare. Même règle et même raison que latitude."
+        data_tests:
+          - valeur_entre:
+              min_value: 1.4
+              max_value: 3.6
