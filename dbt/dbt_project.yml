@@ -19,8 +19,12 @@ models:
 
 vars:
   rayon_gpe_metres: 2000
-  seuil_sous_desserte: 10
-  seuil_gain_modere: 50
+  # Seuils en zones d'arrêt pour 10 000 habitants (stg_gtfs_stops, décision #6).
+  # Recalibrés pour garder la même part de communes qu'avec l'ancien comptage
+  # (10 et 50 arrêts, qui comptaient chaque station ~3,6 fois) :
+  # 174 communes sous 2,76 et 663 sous 16,37, sur 1 285.
+  seuil_sous_desserte: 2.76
+  seuil_gain_modere: 16.37
   seuil_revenu_q1: 22000
   seuil_revenu_q2: 27000
   seuil_revenu_q3: 33000
