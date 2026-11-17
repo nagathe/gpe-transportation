@@ -21,6 +21,9 @@ models:
           - not_null
           - unique
 
+      - name: taux_chomage
+        description: "Ratio entre 0 et 1, repris tel quel de stg_insee_communes (voir sa description)."
+
       - name: categorie_gain
         tests:
           - not_null
