@@ -39,6 +39,7 @@ stops_par_commune as (
         c.revenu_median,
         c.nb_chomeurs,
         c.nb_actifs,
+        c.taux_chomage,       -- ratio 0-1 calculé à l'ingestion (#8)
         c.latitude,           -- ajouté v2 : coordonnées pour les cartes
         c.longitude,          -- ajouté v2 : coordonnées pour les cartes
         -- Jointure spatiale : on compte les arrêts dans un rayon de 1km
@@ -58,6 +59,7 @@ stops_par_commune as (
         c.revenu_median,
         c.nb_chomeurs,
         c.nb_actifs,
+        c.taux_chomage,
         c.latitude,
         c.longitude
 )
@@ -69,6 +71,7 @@ select
     revenu_median,
     nb_chomeurs,
     nb_actifs,
+    taux_chomage,
     latitude,
     longitude,
     -- geom calculée une seule fois ici et propagée aux marts aval

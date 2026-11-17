@@ -21,6 +21,9 @@ models:
           - not_null
           - unique
 
+      - name: taux_chomage
+        description: "Ratio entre 0 et 1, repris tel quel de stg_insee_communes (voir sa description)."
+
       - name: categorie_gain
         tests:
           - not_null
@@ -30,3 +33,31 @@ models:
                 - "Gain modéré"
                 - "Gain faible (déjà bien desservi)"
                 - "Pas de gare GPE"
+
+  - name: precarite_vs_mobilite
+    description: "Croisement précarité / desserte, une ligne par commune au revenu connu (1 271)"
+    columns:
+      - name: code_commune
+        tests:
+          - not_null
+          - unique
+
+      - name: part_habitants_cumulee
+        description: >
+          Part des Franciliens (communes au revenu connu) qui vivent dans une
+          commune au revenu médian inférieur ou égal. Entre 0 et 1.
+
+      - name: quartile_revenu
+        description: >
+          Quartile d'habitants : Q1 = communes du quart le plus pauvre des
+          Franciliens, jusqu'à Q4 = quart le plus aisé. Chaque groupe compte
+          environ 25 % des habitants (vérifié par
+          tests/assert_quartiles_revenu_equilibres.sql).
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - "Q1 - Très précaire"
+                - "Q2 - Précaire"
+                - "Q3 - Médian"
+                - "Q4 - Aisé"

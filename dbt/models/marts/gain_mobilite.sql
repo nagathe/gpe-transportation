@@ -13,7 +13,7 @@
 --
 -- Modifications v2 :
 --   - Ajout nom_commune, latitude, longitude, geom (propagés depuis accessibilite)
---   - Ajout taux_chomage (calculé ici, récupéré par precarite_vs_mobilite)
+--   - Ajout taux_chomage (propagé depuis accessibilite, récupéré par precarite_vs_mobilite)
 --
 -- Notes métier :
 --   - Rayon de 2km pour les gares GPE (vs 1km pour arrêts bus/métro)
@@ -21,8 +21,9 @@
 --   - Les seuils de categorie_gain (2,76 et 16,37 zones d'arrêt/10000 hab,
 --     variables seuil_sous_desserte et seuil_gain_modere) sont calibrés
 --     sur la distribution observée en IDF (voir dbt_project.yml, décision #6)
---   - taux_chomage calculé ici une seule fois pour éviter la duplication
---     dans precarite_vs_mobilite
+--   - taux_chomage : un seul calcul, à l'ingestion (nb_chomeurs / nb_actifs),
+--     stocké en ratio 0-1 (8,7 % = 0,087). Jamais recalculé ni multiplié
+--     par 100 dans dbt : l'affichage en % est le rôle du dashboard (#8)
 -- =============================================================================
 
 with communes as (
@@ -69,12 +70,7 @@ select
     a.geom,                    -- propagé depuis accessibilite_par_commune
     a.nb_arrets_actuels,
     a.arrets_pour_10000_hab,
-    -- Taux de chômage calculé ici une seule fois
-    -- récupéré tel quel par precarite_vs_mobilite (pas recalculé)
-    round(
-        (a.nb_chomeurs / nullif(a.nb_actifs, 0) * 100)::numeric,
-        2
-    ) as taux_chomage,
+    a.taux_chomage,            -- ratio 0-1, propagé tel quel (pas recalculé)
     coalesce(g.nb_gares_gpe, 0) as nb_gares_gpe_futures,
     -- Catégorisation du gain : croise présence GPE et niveau actuel de desserte
     -- Fort gain    = commune sous-desservie qui reçoit une gare GPE

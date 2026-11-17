@@ -13,6 +13,13 @@ models:
               config:
                 severity: warn
 
+      - name: taux_chomage
+        description: >
+          Taux de chômage des 15-64 ans = nb_chomeurs / nb_actifs, calculé une
+          seule fois à l'ingestion. Ratio entre 0 et 1 (8,7 % = 0,087) ;
+          l'affichage en % est fait par le dashboard. Plage vérifiée par
+          tests/assert_taux_chomage_entre_0_et_1.sql.
+
   - name: stg_gtfs_stops
     description: >
       Zones d'arrêt IDFM (location_type = 1) : une station = une ligne.
