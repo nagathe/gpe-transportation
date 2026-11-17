@@ -15,11 +15,15 @@
 --   - taux_chomage récupéré depuis gain_mobilite (plus recalculé ici)
 --
 -- Notes métier :
---   - Les seuils de quartile_revenu sont calibrés sur la distribution IDF :
---       Q1 < 22 000 €  → communes très précaires (Seine-Saint-Denis, etc.)
---       Q2 < 27 000 €  → communes précaires
---       Q3 < 33 000 €  → communes dans la médiane IDF
---       Q4 ≥ 33 000 €  → communes aisées (Hauts-de-Seine ouest, etc.)
+--   - quartile_revenu = vrais quartiles d'HABITANTS (#36) : on range les
+--     communes du revenu médian le plus bas au plus haut et on cumule leur
+--     population. Q1 = communes où vit le quart le plus pauvre des Franciliens
+--     (part cumulée <= 25 %), Q2 <= 50 %, Q3 <= 75 %, Q4 le reste.
+--     Chaque groupe compte donc environ le même nombre d'habitants. Les bornes
+--     sont calculées sur les données, pas écrites à la main (au 17/11/2026 :
+--     ~23 970 / 28 400 / 34 270 €). Remplace les anciens seuils fixes
+--     22 000 / 27 000 / 33 000 €, qui donnaient des groupes très inégaux
+--     (2,1 M d'habitants en Q1 contre 3,7 M en Q3).
 --   - profil_territoire est l'indicateur clé pour les visu finales
 --   - 14 communes exclues car leur revenu_median est NULL : l'INSEE ne le
 --     diffuse pas (secret statistique Filosofi). Ce sont de très petites
@@ -36,7 +40,7 @@ gain as (
     select * from {{ ref('gain_mobilite') }}
 ),
 
--- Enrichissement : on ajoute quartile_revenu à partir du revenu_median
+-- Enrichissement : on ajoute la part cumulée d'habitants, base de quartile_revenu
 enrichi as (
     select
         a.code_commune,
@@ -51,17 +55,29 @@ enrichi as (
         g.nb_gares_gpe_futures,
         g.categorie_gain,
         g.taux_chomage,            -- récupéré depuis gain_mobilite, pas recalculé
-        -- Quartile de revenu (classification sur seuils IDF)
-        case
-            when a.revenu_median < {{ var('seuil_revenu_q1') }} then 'Q1 - Très précaire'
-            when a.revenu_median < {{ var('seuil_revenu_q2') }} then 'Q2 - Précaire'
-            when a.revenu_median < {{ var('seuil_revenu_q3') }} then 'Q3 - Médian'
-            else 'Q4 - Aisé'
-        end as quartile_revenu
+        -- Part des Franciliens vivant dans une commune au revenu médian
+        -- inférieur ou égal (calculée après le filtre revenu_median non NULL)
+        sum(a.population) over (
+            order by a.revenu_median, a.code_commune
+            rows between unbounded preceding and current row
+        ) / sum(a.population) over () as part_habitants_cumulee
     from accessibilite a
     left join gain g using (code_commune)
     where a.revenu_median is not null
     -- Exclut les 14 communes au revenu non diffusé par l'INSEE (voir en-tête)
+),
+
+-- Quartile d'habitants (voir en-tête)
+avec_quartile as (
+    select
+        *,
+        case
+            when part_habitants_cumulee <= 0.25 then 'Q1 - Très précaire'
+            when part_habitants_cumulee <= 0.50 then 'Q2 - Précaire'
+            when part_habitants_cumulee <= 0.75 then 'Q3 - Médian'
+            else 'Q4 - Aisé'
+        end as quartile_revenu
+    from enrichi
 )
 
 select
@@ -85,4 +101,4 @@ select
         then 'Territoire aisé avec GPE'
         else 'Territoire standard'
     end as profil_territoire
-from enrichi
+from avec_quartile
