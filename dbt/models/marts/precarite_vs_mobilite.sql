@@ -21,9 +21,9 @@
 --       Q3 < 33 000 €  → communes dans la médiane IDF
 --       Q4 ≥ 33 000 €  → communes aisées (Hauts-de-Seine ouest, etc.)
 --   - profil_territoire est l'indicateur clé pour les visu finales
---   - 15 communes exclues car population < 1000 hab
---     (seuil de confidentialité Filosofi INSEE)
---     Communes concernées : très petites communes rurales 77/78/91/95
+--   - 14 communes exclues car leur revenu_median est NULL : l'INSEE ne le
+--     diffuse pas (secret statistique Filosofi). Ce sont de très petites
+--     communes rurales (77/78/91/95, 102 habitants au plus).
 -- =============================================================================
 
 with accessibilite as (
@@ -61,9 +61,7 @@ enrichi as (
     from accessibilite a
     left join gain g using (code_commune)
     where a.revenu_median is not null
-    -- Note : 15 communes exclues car population < 1000 hab
-    -- (seuil de confidentialité Filosofi INSEE)
-    -- Communes concernées : très petites communes rurales 77/78/91/95
+    -- Exclut les 14 communes au revenu non diffusé par l'INSEE (voir en-tête)
 )
 
 select
